@@ -16,7 +16,11 @@
   --star-off: #d4d4d8;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
   --shadow-lg: 0 10px 30px rgba(16, 24, 40, 0.18);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -79,6 +83,18 @@ button {
   grid-template-columns: 300px minmax(0, 1fr);
   max-width: none;
   height: 100dvh;
+}
+
+/* Mobile with the menu pinned: a compact two-pane layout. */
+.app.pinned {
+  display: grid;
+  grid-template-columns: minmax(7rem, 42%) minmax(0, 1fr);
+  max-width: none;
+  height: 100dvh;
+}
+
+.app.pinned .sidebar {
+  border-right: 1px solid var(--border);
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────── */
@@ -182,7 +198,10 @@ button {
   height: 2.3rem;
   font-size: 1.02rem;
   line-height: 1;
-  transition: background 0.12s, border-color 0.12s, transform 0.06s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    transform 0.06s;
 }
 
 .icon:hover {
@@ -192,6 +211,12 @@ button {
 
 .icon:active {
   transform: scale(0.94);
+}
+
+.icon.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .icon.danger {
@@ -227,7 +252,9 @@ button {
   background: var(--bg);
   color: var(--text);
   font-size: 0.95rem;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .search:focus {
@@ -351,7 +378,9 @@ button {
   font-size: 0.95rem;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.12s, background 0.12s;
+  transition:
+    opacity 0.12s,
+    background 0.12s;
 }
 
 .row-move:hover {
@@ -488,7 +517,9 @@ button {
   padding: 0.35rem 0.8rem;
   font-size: 0.85rem;
   font-weight: 600;
-  transition: filter 0.12s, transform 0.06s;
+  transition:
+    filter 0.12s,
+    transform 0.06s;
 }
 
 .joke-btn:hover {
@@ -545,6 +576,46 @@ button {
   color: var(--joke-border);
 }
 
+.joke-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.joke-move {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.joke-arrow {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 7px;
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    transform 0.06s;
+}
+
+.joke-arrow:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+
+.joke-arrow:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.joke-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .joke-stars {
   display: flex;
   gap: 0.05rem;
@@ -557,7 +628,9 @@ button {
   font-size: 1.15rem;
   line-height: 1;
   color: var(--star-off);
-  transition: transform 0.08s, color 0.12s;
+  transition:
+    transform 0.08s,
+    color 0.12s;
 }
 
 .star.on {
@@ -678,7 +751,9 @@ button {
   font-weight: 600;
   font-size: 0.95rem;
   box-shadow: var(--shadow);
-  transition: background 0.12s, transform 0.06s;
+  transition:
+    background 0.12s,
+    transform 0.06s;
 }
 
 .welcome-btn:hover {
@@ -809,7 +884,9 @@ button {
   background: var(--bg);
   color: var(--text);
   font-size: 1rem;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .login input:focus {
@@ -831,7 +908,9 @@ button {
   border-radius: 10px;
   background: var(--bg);
   font-weight: 600;
-  transition: background 0.12s, transform 0.06s;
+  transition:
+    background 0.12s,
+    transform 0.06s;
 }
 
 .login-actions button:hover {

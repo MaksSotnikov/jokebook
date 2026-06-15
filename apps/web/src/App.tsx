@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
-import { buildLinkGraph, noteName, parseTags, type ApiNote, type PushResult } from '@notes/core'
+import {
+  buildLinkGraph,
+  noteName,
+  parseTags,
+  type ApiNote,
+  type PushItem,
+  type PushResult,
+} from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
 import { buildTree, Tree } from './Tree'
-import { parseJokes, setJokeStars, wrapJoke, type JokeSegment } from './jokes'
+import { moveJoke, parseJokes, setJokeStars, wrapJoke, type JokeSegment } from './jokes'
 import {
   decodeTagHref,
   decodeWikiHref,
@@ -173,6 +180,19 @@ function Workspace({
 }) {
   const { serverUrl, token } = auth
   const wide = useWide()
+  // On narrow screens the user can "pin" the note list so it stays docked
+  // beside the open note (a two-pane layout) instead of being a separate view.
+  const [pinned, setPinned] = useState(() => localStorage.getItem('notes.web.pinned') === '1')
+  // Two-pane whenever the viewport is wide, or the user pinned the menu.
+  const twoPane = wide || pinned
+  const togglePinned = useCallback(() => {
+    setPinned((p) => {
+      const next = !p
+      localStorage.setItem('notes.web.pinned', next ? '1' : '0')
+      return next
+    })
+  }, [])
+  const importRef = useRef<HTMLInputElement>(null)
   const [notes, setNotes] = useState<ApiNote[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -339,6 +359,83 @@ function Workspace({
   /** Set the `index`-th joke's star rating in the current note. */
   function rateJoke(index: number, stars: number) {
     onEdit(setJokeStars(draft, index, stars))
+  }
+
+  /** Swap the `index`-th joke with its neighbour (`-1` up, `+1` down). */
+  function reorderJoke(index: number, dir: -1 | 1) {
+    onEdit(moveJoke(draft, index, dir))
+  }
+
+  /** Import one or more Obsidian `.md` files as notes, preserving any folder
+   * structure carried in the picked paths. Existing paths are skipped so an
+   * import never silently shadows a note already in the vault. */
+  async function importFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return
+    await saveNow()
+    const files = [...fileList].filter((f) => f.name.toLowerCase().endsWith('.md'))
+    if (files.length === 0) {
+      setError('Select one or more .md files to import.')
+      return
+    }
+    const taken = new Set(noteItems.map((n) => n.path))
+    const folders = new Set<string>()
+    const items: PushItem[] = []
+    let skipped = 0
+    for (const f of files) {
+      // A directory pick exposes the path via webkitRelativePath; a plain
+      // multi-file pick only gives the filename.
+      const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/').replace(/^\/+/, '')
+      if (taken.has(rel)) {
+        skipped++
+        continue
+      }
+      taken.add(rel)
+      const content = await f.text()
+      items.push({
+        id: newId(),
+        path: rel,
+        content,
+        updatedAt: Date.now(),
+        deleted: false,
+        baseVersion: 0,
+      })
+      const parts = rel.split('/')
+      parts.pop()
+      let acc = ''
+      for (const p of parts) {
+        acc = acc ? `${acc}/${p}` : p
+        folders.add(`${acc}/`)
+      }
+    }
+    // Folder markers (path + `/`) so imported subfolders show in the tree.
+    for (const fp of folders) {
+      if (taken.has(fp)) continue
+      taken.add(fp)
+      items.push({
+        id: newId(),
+        path: fp,
+        content: '',
+        updatedAt: Date.now(),
+        deleted: false,
+        baseVersion: 0,
+      })
+    }
+    if (items.length === 0) {
+      setError(`Nothing imported — ${skipped} note${skipped === 1 ? '' : 's'} already exist.`)
+      return
+    }
+    try {
+      const { results } = await push(serverUrl, token, items)
+      applyResults(results)
+      const added = items.filter((i) => !i.path.endsWith('/')).length
+      setError(
+        `Imported ${added} note${added === 1 ? '' : 's'}` +
+          (skipped ? ` (skipped ${skipped} already present)` : '') +
+          '.',
+      )
+    } catch (e) {
+      handleError(e)
+    }
   }
 
   async function openNote(id: string) {
@@ -508,7 +605,11 @@ function Workspace({
 
   // Folder/file tree shown when not searching or tag-filtering.
   const tree = useMemo(
-    () => buildTree(noteItems.map((n) => ({ id: n.id, path: n.path })), folderPaths),
+    () =>
+      buildTree(
+        noteItems.map((n) => ({ id: n.id, path: n.path })),
+        folderPaths,
+      ),
     [noteItems, folderPaths],
   )
   const filtering = Boolean(query.trim() || tagFilter)
@@ -533,7 +634,12 @@ function Workspace({
           <span className="brand-name">Joke book</span>
         </div>
         <div className="sb-actions">
-          <button className="icon" title="Refresh" disabled={syncing} onClick={() => void refresh()}>
+          <button
+            className="icon"
+            title="Refresh"
+            disabled={syncing}
+            onClick={() => void refresh()}
+          >
             {syncing ? '…' : '↻'}
           </button>
           <button className="icon" title="New note" onClick={() => void newNote()}>
@@ -542,11 +648,38 @@ function Workspace({
           <button className="icon" title="New folder" onClick={() => void newFolder()}>
             📁
           </button>
+          <button
+            className="icon"
+            title="Import .md files from Obsidian"
+            onClick={() => importRef.current?.click()}
+          >
+            📥
+          </button>
+          {!wide && (
+            <button
+              className={`icon${pinned ? ' active' : ''}`}
+              title={pinned ? 'Unpin menu' : 'Pin menu'}
+              onClick={togglePinned}
+            >
+              📌
+            </button>
+          )}
           <button className="icon" title="Log out" onClick={onLogout}>
             ⎋
           </button>
         </div>
       </header>
+      <input
+        ref={importRef}
+        type="file"
+        accept=".md,text/markdown"
+        multiple
+        hidden
+        onChange={(e) => {
+          void importFiles(e.currentTarget.files)
+          e.currentTarget.value = '' // allow re-importing the same file
+        }}
+      />
       <div className="sb-user" title={auth.user.email}>
         {auth.user.email}
       </div>
@@ -613,7 +746,7 @@ function Workspace({
   const noteView = current && (
     <section className="content">
       <header className="bar">
-        {!wide && (
+        {!twoPane && (
           <button className="icon" title="Back" onClick={() => void back()}>
             ‹
           </button>
@@ -621,6 +754,15 @@ function Workspace({
         <span className="bar-title" title={current.path}>
           {noteName(current.path)}
         </span>
+        {!wide && (
+          <button
+            className={`icon${pinned ? ' active' : ''}`}
+            title={pinned ? 'Unpin menu' : 'Pin menu'}
+            onClick={togglePinned}
+          >
+            📌
+          </button>
+        )}
         <span className={`status ${status}`}>{status}</span>
         <button
           className="icon"
@@ -684,6 +826,9 @@ function Workspace({
                   stars={seg.stars}
                   html={renderMd(seg.body)}
                   onRate={(n) => rateJoke(seg.index, n)}
+                  canMoveUp={seg.index > 0}
+                  canMoveDown={seg.index < jokeStats.count - 1}
+                  onMove={(dir) => reorderJoke(seg.index, dir)}
                 />
               ),
             )}
@@ -738,8 +883,8 @@ function Workspace({
   )
 
   return (
-    <div className={`app${wide ? ' wide' : ''}`}>
-      {wide ? (
+    <div className={`app${wide ? ' wide' : ''}${pinned && !wide ? ' pinned' : ''}`}>
+      {twoPane ? (
         <>
           {sidebar}
           {current ? noteView : welcome}
@@ -793,37 +938,74 @@ function Workspace({
 
 // ── Joke block ────────────────────────────────────────────────────────────
 
-/** A highlighted joke with a clickable 5-star rating. Clicking the current
- * top star again clears the rating. */
+/** A highlighted joke with a clickable 5-star rating and up/down controls to
+ * reorder it among the note's jokes. Clicking the current top star again
+ * clears the rating. */
 function JokeBlock({
   stars,
   html,
   onRate,
+  canMoveUp,
+  canMoveDown,
+  onMove,
 }: {
   stars: number
   html: string
   onRate: (stars: number) => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMove: (dir: -1 | 1) => void
 }) {
   return (
     <div className={`joke${stars > 0 ? ' rated' : ''}`}>
       <div className="joke-rail">
         <span className="joke-badge">🎤 Joke</span>
-        <div className="joke-stars" role="group" aria-label="Rating">
-          {[1, 2, 3, 4, 5].map((v) => (
+        <div className="joke-controls">
+          <div className="joke-move" role="group" aria-label="Reorder joke">
             <button
-              key={v}
               type="button"
-              className={`star${v <= stars ? ' on' : ''}`}
-              title={`${v} star${v > 1 ? 's' : ''}`}
-              aria-label={`${v} star${v > 1 ? 's' : ''}`}
+              className="joke-arrow"
+              title="Move up"
+              aria-label="Move joke up"
+              disabled={!canMoveUp}
               onClick={(e) => {
                 e.stopPropagation()
-                onRate(v === stars ? 0 : v)
+                onMove(-1)
               }}
             >
-              ★
+              ↑
             </button>
-          ))}
+            <button
+              type="button"
+              className="joke-arrow"
+              title="Move down"
+              aria-label="Move joke down"
+              disabled={!canMoveDown}
+              onClick={(e) => {
+                e.stopPropagation()
+                onMove(1)
+              }}
+            >
+              ↓
+            </button>
+          </div>
+          <div className="joke-stars" role="group" aria-label="Rating">
+            {[1, 2, 3, 4, 5].map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={`star${v <= stars ? ' on' : ''}`}
+                title={`${v} star${v > 1 ? 's' : ''}`}
+                aria-label={`${v} star${v > 1 ? 's' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRate(v === stars ? 0 : v)
+                }}
+              >
+                ★
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="joke-body" dangerouslySetInnerHTML={{ __html: html }} />

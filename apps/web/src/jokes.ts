@@ -32,7 +32,12 @@ function scan(lines: string[]): ScannedJoke[] {
       let j = i + 1
       while (j < lines.length && !CLOSE.test(strip(lines[j]))) j++
       if (j < lines.length) {
-        out.push({ open: i, close: j, stars: m[1] ? Number(m[1]) : 0, body: lines.slice(i + 1, j).join('\n') })
+        out.push({
+          open: i,
+          close: j,
+          stars: m[1] ? Number(m[1]) : 0,
+          body: lines.slice(i + 1, j).join('\n'),
+        })
         i = j + 1
         continue
       }
@@ -63,7 +68,8 @@ export function parseJokes(text: string): Segment[] {
   let cursor = 0
   let index = 0
   for (const jk of jokes) {
-    if (jk.open > cursor) segs.push({ type: 'text', value: lines.slice(cursor, jk.open).join('\n') })
+    if (jk.open > cursor)
+      segs.push({ type: 'text', value: lines.slice(cursor, jk.open).join('\n') })
     segs.push({ type: 'joke', index: index++, stars: jk.stars, body: jk.body })
     cursor = jk.close + 1
   }
@@ -79,6 +85,27 @@ export function setJokeStars(text: string, index: number, stars: number): string
   if (!jk) return text
   lines[jk.open] = `:::joke ${stars}`
   return lines.join('\n')
+}
+
+/** Swap the `index`-th joke block with its neighbour `dir` steps away
+ * (`-1` = previous, `+1` = next), leaving any interleaved text in place.
+ * Returns the text unchanged if either joke is out of range. */
+export function moveJoke(text: string, index: number, dir: -1 | 1): string {
+  const lines = text.split('\n')
+  const jokes = scan(lines)
+  const a = jokes[index]
+  const b = jokes[index + dir]
+  if (!a || !b) return text
+  // Work in document order so the slice math holds regardless of `dir`.
+  const [first, second] = a.open < b.open ? [a, b] : [b, a]
+  const swapped = [
+    ...lines.slice(0, first.open),
+    ...lines.slice(second.open, second.close + 1),
+    ...lines.slice(first.close + 1, second.open),
+    ...lines.slice(first.open, first.close + 1),
+    ...lines.slice(second.close + 1),
+  ]
+  return swapped.join('\n')
 }
 
 /** Wrap `selection` as a new (unrated) joke block, padding newlines so the
