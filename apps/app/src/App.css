@@ -1,0 +1,620 @@
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f4f5f7;
+  --bg-hover: #e9ebef;
+  --border: #e0e2e7;
+  --text: #1d1f23;
+  --text-dim: #6b7280;
+  --accent: #4f46e5;
+  --accent-soft: #e0e7ff;
+  --tag: #0e7490;
+  --danger: #dc2626;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1f22;
+    --bg-alt: #25272b;
+    --bg-hover: #313338;
+    --border: #36383d;
+    --text: #e6e7e9;
+    --text-dim: #9aa0a6;
+    --accent: #818cf8;
+    --accent-soft: #312e57;
+    --tag: #22d3ee;
+    --danger: #f87171;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---------- Welcome ---------- */
+.welcome {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.welcome p {
+  max-width: 28rem;
+  color: var(--text-dim);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+}
+
+button:hover {
+  background: var(--bg-hover);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+}
+
+/* ---------- App shell ---------- */
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-alt);
+}
+
+.vault-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.sidebar-actions button {
+  padding: 0.1rem 0.45rem;
+  line-height: 1.4;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  padding: 0.75rem;
+}
+
+.search {
+  margin: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Search hits stack the note name over a body snippet. */
+.results li.tree-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+}
+
+.results .snippet {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.results .snippet mark {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* ---------- Tree ---------- */
+.tree,
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tree-row:hover {
+  background: var(--bg-hover);
+}
+
+.tree-row.active {
+  background: var(--accent-soft);
+}
+
+.tree-row .twisty {
+  width: 1rem;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.tree-row.folder .label {
+  font-weight: 600;
+}
+
+.tree-row .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Main / editor ---------- */
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.placeholder {
+  margin: auto;
+  color: var(--text-dim);
+}
+
+.editor-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-head .title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.status.saving {
+  color: var(--accent);
+}
+
+.status.unsaved {
+  color: var(--danger);
+}
+
+button.danger {
+  border-color: transparent;
+  background: transparent;
+}
+
+.editor-head .title {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* Clickable tag chips: in the editor header and as the active-filter pill. */
+.tag-chip {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tag);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tag-chip:hover {
+  border-color: var(--tag);
+}
+
+.tag-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.tag-filter .tag-chip {
+  cursor: default;
+}
+
+.tag-filter button {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.preview a[href^="#tag:"] {
+  color: var(--tag);
+  text-decoration: none;
+}
+
+.preview a[href^="#tag:"]:hover {
+  text-decoration: underline;
+}
+
+button.danger:hover {
+  background: var(--bg-hover);
+}
+
+.panes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+}
+
+/* ---------- Backlinks ---------- */
+.backlinks {
+  border-top: 1px solid var(--border);
+  background: var(--bg-alt);
+  padding: 0.4rem 0.75rem;
+  max-height: 9rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.backlinks-head {
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+
+.empty-inline {
+  color: var(--text-dim);
+  margin-left: 0.5rem;
+}
+
+.backlinks ul {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+}
+
+.backlinks li {
+  padding: 0.15rem 0.25rem;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.backlinks li:hover {
+  background: var(--bg-hover);
+}
+
+.preview a[href^="#wl:"] {
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent);
+}
+
+/* ---------- Sync panel ---------- */
+.sync {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-alt);
+}
+
+.sync-input {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.sync-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sync-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.sync-row .primary {
+  flex: 1;
+  padding: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.sync-meta {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-msg {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+
+.sync-auto {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sync-auto input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.editor {
+  overflow: auto;
+  border-right: 1px solid var(--border);
+}
+
+.cm-editor {
+  height: 100%;
+}
+
+.cm-scroller {
+  font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+.preview {
+  overflow: auto;
+  padding: 0.5rem 1.25rem;
+  line-height: 1.6;
+}
+
+.preview h1,
+.preview h2,
+.preview h3 {
+  line-height: 1.25;
+}
+
+.preview pre {
+  background: var(--bg-alt);
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.preview code {
+  background: var(--bg-alt);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
+
+.preview pre code {
+  padding: 0;
+}
+
+.preview a {
+  color: var(--accent);
+}
+
+.preview blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  max-width: 30rem;
+  background: var(--danger);
+  color: #fff;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.toast .dismiss {
+  margin-left: 0.5rem;
+  opacity: 0.8;
+}
+
+/* ── Graph view (C.3) ───────────────────────────────────────────── */
+.graph-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.graph-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+
+.graph-title {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.graph-head button {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  width: 1.9rem;
+  height: 1.9rem;
+  cursor: pointer;
+}
+
+.graph-head button:hover {
+  background: var(--bg-hover);
+}
+
+.graph-empty {
+  margin: auto;
+}
+
+.graph-svg {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.graph-svg:active {
+  cursor: grabbing;
+}
+
+.graph-edge {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.graph-edge.active {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.graph-node {
+  cursor: pointer;
+}
+
+.graph-node circle {
+  fill: var(--text-dim);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  transition: fill 0.15s;
+}
+
+.graph-node:hover circle {
+  fill: var(--accent);
+}
+
+.graph-node.active circle {
+  fill: var(--accent);
+}
+
+.graph-node.neighbour circle {
+  fill: var(--tag);
+}
+
+.graph-node.dim circle {
+  fill: var(--border);
+}
+
+.graph-node.dim text {
+  opacity: 0.35;
+}
+
+.graph-node text {
+  fill: var(--text);
+  font-size: 11px;
+  text-anchor: middle;
+  pointer-events: none;
+}

@@ -1,0 +1,12 @@
+# Installed/built artifacts are recreated inside the image.
+**/node_modules
+**/dist
+# Local dev database (PGlite) — never ship it.
+**/.pglite-data
+# Rust build output for the desktop app (not used by the server build).
+apps/app/src-tauri/target
+**/target
+# VCS / misc.
+.git
+*.log
+.DS_Store
