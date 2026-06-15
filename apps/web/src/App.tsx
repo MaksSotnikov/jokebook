@@ -109,7 +109,7 @@ function Login({
 
   return (
     <main className="login">
-      <h1>Notes</h1>
+      <h1>Joke book</h1>
       <p className="hint">Sign in to your sync account to read and edit your notes.</p>
       <label>
         Server URL
@@ -493,7 +493,7 @@ function Workspace({
       <header className="sb-head">
         <div className="brand">
           <span className="brand-mark">📓</span>
-          <span className="brand-name">Notes</span>
+          <span className="brand-name">Joke book</span>
         </div>
         <div className="sb-actions">
           <button className="icon" title="Refresh" disabled={syncing} onClick={() => void refresh()}>
@@ -541,8 +541,20 @@ function Workspace({
                 className={`list-row${n.id === selectedId ? ' active' : ''}`}
                 onClick={() => void openNote(n.id)}
               >
-                <span className="list-name">{noteName(n.path)}</span>
-                <span className="list-path">{n.path}</span>
+                <div className="list-text">
+                  <span className="list-name">{noteName(n.path)}</span>
+                  <span className="list-path">{n.path}</span>
+                </div>
+                <button
+                  className="row-move"
+                  title="Move to folder"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMovingId(n.id)
+                  }}
+                >
+                  📂
+                </button>
               </li>
             ))}
           </ul>
@@ -555,6 +567,7 @@ function Workspace({
           activeId={selectedId}
           onSelect={(id) => void openNote(id)}
           onMove={(id, folder) => void moveNote(id, folder)}
+          onMoveRequest={(id) => setMovingId(id)}
         />
       )}
     </aside>

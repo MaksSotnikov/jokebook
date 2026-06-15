@@ -68,10 +68,12 @@ interface TreeProps {
   onSelect: (id: string) => void
   /** Move a note into `toFolder` (`''` = vault root). */
   onMove: (id: string, toFolder: string) => void
+  /** Open the folder-picker for a note (touch-friendly move; no drag needed). */
+  onMoveRequest: (id: string) => void
 }
 
 /** Renders the vault tree; folders collapse and accept dropped notes. */
-export function Tree({ nodes, activeId, onSelect, onMove }: TreeProps) {
+export function Tree({ nodes, activeId, onSelect, onMove, onMoveRequest }: TreeProps) {
   const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   function handleDrop(e: React.DragEvent, folderPath: string) {
@@ -100,6 +102,7 @@ export function Tree({ nodes, activeId, onSelect, onMove }: TreeProps) {
           depth={0}
           activeId={activeId}
           onSelect={onSelect}
+          onMoveRequest={onMoveRequest}
           dropTarget={dropTarget}
           setDropTarget={setDropTarget}
           handleDrop={handleDrop}
@@ -114,6 +117,7 @@ interface TreeItemProps {
   depth: number
   activeId: string | null
   onSelect: (id: string) => void
+  onMoveRequest: (id: string) => void
   dropTarget: string | null
   setDropTarget: (path: string | null) => void
   handleDrop: (e: React.DragEvent, folderPath: string) => void
@@ -124,6 +128,7 @@ function TreeItem({
   depth,
   activeId,
   onSelect,
+  onMoveRequest,
   dropTarget,
   setDropTarget,
   handleDrop,
@@ -162,6 +167,7 @@ function TreeItem({
                 depth={depth + 1}
                 activeId={activeId}
                 onSelect={onSelect}
+                onMoveRequest={onMoveRequest}
                 dropTarget={dropTarget}
                 setDropTarget={setDropTarget}
                 handleDrop={handleDrop}
@@ -186,6 +192,16 @@ function TreeItem({
         onClick={() => node.id && onSelect(node.id)}
       >
         <span className="label">{node.name}</span>
+        <button
+          className="row-move"
+          title="Move to folder"
+          onClick={(e) => {
+            e.stopPropagation()
+            if (node.id) onMoveRequest(node.id)
+          }}
+        >
+          📂
+        </button>
       </div>
     </li>
   )
