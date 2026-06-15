@@ -165,6 +165,55 @@ fn delete_note(vault: String, path: String) -> Result<(), String> {
     fs::remove_file(&full).map_err(|e| e.to_string())
 }
 
+/// Recursively collect non-hidden subdirectory paths (vault-relative). Mirrors
+/// `collect`'s dotfile skip so `.git` / `.obsidian` never show up as folders.
+fn collect_dirs(dir: &Path, root: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            let path = entry.path();
+            if let Some(rel) = rel_path(root, &path) {
+                out.push(rel);
+            }
+            collect_dirs(&path, root, out)?;
+        }
+    }
+    Ok(())
+}
+
+/// List every (possibly empty) folder in the vault, so the tree can show
+/// folders that hold no notes yet and offer them as drag-and-drop targets.
+#[tauri::command]
+fn list_folders(vault: String) -> Result<Vec<String>, String> {
+    let root = PathBuf::from(&vault);
+    let mut out = Vec::new();
+    collect_dirs(&root, &root, &mut out).map_err(|e| e.to_string())?;
+    out.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    Ok(out)
+}
+
+/// Create a folder (and any missing parents), failing if it already exists.
+#[tauri::command]
+fn create_folder(vault: String, path: String) -> Result<(), String> {
+    let full = resolve_in_vault(&vault, &path)?;
+    if full.exists() {
+        return Err("a folder already exists at that path".into());
+    }
+    fs::create_dir_all(&full).map_err(|e| e.to_string())
+}
+
+/// Remove a folder, but only if it is empty — `remove_dir` never recurses, so a
+/// folder tombstone arriving over sync can't wipe notes that still live under it.
+#[tauri::command]
+fn remove_folder(vault: String, path: String) -> Result<(), String> {
+    let full = resolve_in_vault(&vault, &path)?;
+    fs::remove_dir(&full).map_err(|e| e.to_string())
+}
+
 /// Rename / move a note, failing if the target already exists.
 #[tauri::command]
 fn rename_note(vault: String, from: String, to: String) -> Result<(), String> {
@@ -335,6 +384,9 @@ pub fn run() {
             create_note,
             delete_note,
             rename_note,
+            list_folders,
+            create_folder,
+            remove_folder,
             watch_vault,
             index_vault,
             search_notes

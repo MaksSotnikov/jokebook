@@ -7,25 +7,57 @@ import {
   type SyncTransport,
 } from '@notes/core'
 import type { PushItem } from '@notes/core'
-import { deleteNote, readAllNotes, readNote, writeNote } from './api'
+import {
+  createFolder,
+  deleteNote,
+  listFolders,
+  readAllNotes,
+  readNote,
+  removeFolder,
+  writeNote,
+} from './api'
 
 /** Sidecar file holding per-vault sync bookkeeping. Hidden, so it never lists
  * as a note (the Rust walker skips dotfiles). */
 const SYNC_STATE_FILE = '.notes-sync.json'
 
+/**
+ * Folders ride the note sync protocol as zero-content markers whose path ends
+ * in `/` (e.g. `"work/"`). The pure sync engine treats them like any other
+ * note; this adapter is the only place that knows a trailing-slash path means
+ * "directory", so empty folders sync across devices without a protocol change.
+ */
+function isFolderMarker(path: string): boolean {
+  return path.endsWith('/')
+}
+
 /** Filesystem port backed by the Tauri vault commands. */
 export function makeTauriFs(vault: string): SyncFs {
   return {
     async list() {
-      const notes = await readAllNotes(vault)
-      return notes.map((n) => ({ path: n.path, content: n.content, updatedAt: n.modified }))
+      const [notes, folders] = await Promise.all([readAllNotes(vault), listFolders(vault)])
+      const noteItems = notes.map((n) => ({ path: n.path, content: n.content, updatedAt: n.modified }))
+      // mtime is irrelevant for folders (empty content never "changes"); 0 is fine.
+      const folderItems = folders.map((f) => ({ path: `${f}/`, content: '', updatedAt: 0 }))
+      return [...noteItems, ...folderItems]
     },
-    write: (path, content) => writeNote(vault, path, content),
+    async write(path, content) {
+      if (isFolderMarker(path)) {
+        try {
+          await createFolder(vault, path.slice(0, -1))
+        } catch {
+          // Folder already exists — adoption is idempotent.
+        }
+        return
+      }
+      await writeNote(vault, path, content)
+    },
     async remove(path) {
       try {
-        await deleteNote(vault, path)
+        if (isFolderMarker(path)) await removeFolder(vault, path.slice(0, -1))
+        else await deleteNote(vault, path)
       } catch {
-        // Already gone — sync treats removal as idempotent.
+        // Already gone (or folder not empty) — sync treats removal as idempotent.
       }
     },
   }

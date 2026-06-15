@@ -214,6 +214,19 @@ button.primary {
   font-weight: 600;
 }
 
+/* Notes are draggable into folders; folders/root highlight as drop targets. */
+.tree-row.file {
+  cursor: grab;
+}
+
+.tree-row.drop-target,
+.tree.drop-target {
+  background: var(--accent-soft);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
 .tree-row .label {
   overflow: hidden;
   text-overflow: ellipsis;

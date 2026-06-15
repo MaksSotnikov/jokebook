@@ -57,6 +57,21 @@ export function renameNote(vault: string, from: string, to: string): Promise<voi
   return invoke('rename_note', { vault, from, to })
 }
 
+/** List every folder in the vault (vault-relative paths), including empty ones. */
+export function listFolders(vault: string): Promise<string[]> {
+  return invoke<string[]>('list_folders', { vault })
+}
+
+/** Create a folder (and any missing parents); fails if it already exists. */
+export function createFolder(vault: string, path: string): Promise<void> {
+  return invoke('create_folder', { vault, path })
+}
+
+/** Remove a folder (only if empty); used when sync adopts a folder deletion. */
+export function removeFolder(vault: string, path: string): Promise<void> {
+  return invoke('remove_folder', { vault, path })
+}
+
 /** Rebuild the full-text search index from the vault on disk. */
 export function indexVault(vault: string): Promise<void> {
   return invoke('index_vault', { vault })

@@ -13,18 +13,20 @@ export interface TreeNode {
 }
 
 /**
- * Build a nested folder/file tree from a flat list of notes. Folders are
- * inferred from the `/`-separated note paths; at each level folders are
- * listed before files, both sorted case-insensitively.
+ * Build a nested folder/file tree. Folders come from two sources: the explicit
+ * `folders` list (so empty folders still appear and can be drop targets) and the
+ * `/`-separated note paths. At each level folders are listed before files, both
+ * sorted case-insensitively.
  */
-export function buildTree(notes: NoteEntry[]): TreeNode[] {
+export function buildTree(notes: NoteEntry[], folders: string[] = []): TreeNode[] {
   const root: TreeNode = { name: '', path: '', isDir: true, children: [] }
 
-  for (const note of notes) {
-    const segments = note.path.split('/')
+  // Find-or-create the folder node for a vault-relative dir path (`''` = root).
+  function ensureDir(dirPath: string): TreeNode {
     let cursor = root
-    // Walk/create folder nodes for every segment except the last (the file).
-    for (let i = 0; i < segments.length - 1; i++) {
+    if (!dirPath) return cursor
+    const segments = dirPath.split('/')
+    for (let i = 0; i < segments.length; i++) {
       const folderPath = segments.slice(0, i + 1).join('/')
       let next = cursor.children.find((c) => c.isDir && c.path === folderPath)
       if (!next) {
@@ -33,7 +35,15 @@ export function buildTree(notes: NoteEntry[]): TreeNode[] {
       }
       cursor = next
     }
-    cursor.children.push({ name: note.name, path: note.path, isDir: false, children: [] })
+    return cursor
+  }
+
+  // Seed explicit folders first so empty ones survive even with no notes.
+  for (const folder of folders) ensureDir(folder)
+
+  for (const note of notes) {
+    const dir = note.path.split('/').slice(0, -1).join('/')
+    ensureDir(dir).children.push({ name: note.name, path: note.path, isDir: false, children: [] })
   }
 
   sortTree(root.children)

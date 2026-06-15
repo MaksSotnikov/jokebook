@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import { buildLinkGraph, noteName, parseTags, type ApiNote, type PushResult } from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
+import { buildTree, Tree } from './Tree'
 import {
   decodeTagHref,
   decodeWikiHref,
@@ -159,6 +160,9 @@ function Workspace({
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  // Note id whose folder-picker sheet is open (touch-friendly alternative to
+  // drag-and-drop); null = closed.
+  const [movingId, setMovingId] = useState<string | null>(null)
 
   const cursorRef = useRef(0)
   const saveTimer = useRef<number | null>(null)
@@ -167,15 +171,24 @@ function Workspace({
     null,
   )
 
-  const current = useMemo(
-    () => notes.find((n) => n.id === selectedId) ?? null,
-    [notes, selectedId],
+  // Folders ride the sync protocol as zero-content markers whose path ends in
+  // `/` (see Tree.tsx / the desktop sync adapter). Split them out so only real
+  // notes feed content, links, search and the note list.
+  const noteItems = useMemo(() => notes.filter((n) => !n.path.endsWith('/')), [notes])
+  const folderPaths = useMemo(
+    () => notes.filter((n) => n.path.endsWith('/')).map((n) => n.path.replace(/\/+$/, '')),
+    [notes],
   )
-  const paths = useMemo(() => notes.map((n) => n.path), [notes])
+
+  const current = useMemo(
+    () => noteItems.find((n) => n.id === selectedId) ?? null,
+    [noteItems, selectedId],
+  )
+  const paths = useMemo(() => noteItems.map((n) => n.path), [noteItems])
 
   const linkGraph = useMemo(
-    () => buildLinkGraph(notes.map((n) => ({ id: n.path, path: n.path, content: n.content }))),
-    [notes],
+    () => buildLinkGraph(noteItems.map((n) => ({ id: n.path, path: n.path, content: n.content }))),
+    [noteItems],
   )
   const backlinks = useMemo(() => {
     if (!current) return []
@@ -284,7 +297,7 @@ function Workspace({
 
   async function openNote(id: string) {
     await saveNow()
-    const note = notes.find((n) => n.id === id)
+    const note = noteItems.find((n) => n.id === id)
     if (!note) return
     setSelectedId(id)
     setDraft(note.content)
@@ -293,7 +306,7 @@ function Workspace({
   }
 
   function openByPath(path: string) {
-    const note = notes.find((n) => n.path === path)
+    const note = noteItems.find((n) => n.path === path)
     if (note) void openNote(note.id)
   }
 
@@ -325,6 +338,47 @@ function Workspace({
     if (!name) return
     const path = name.toLowerCase().endsWith('.md') ? name : `${name}.md`
     await createWithPath(path, '')
+  }
+
+  /** Create an (empty) folder by pushing a zero-content marker (path + `/`). */
+  async function newFolder() {
+    await saveNow()
+    const name = window.prompt('New folder name:')?.trim()
+    if (!name) return
+    const path = `${name.replace(/\/+$/, '')}/`
+    try {
+      const { results } = await push(serverUrl, token, [
+        { id: newId(), path, content: '', updatedAt: Date.now(), deleted: false, baseVersion: 0 },
+      ])
+      applyResults(results)
+    } catch (e) {
+      handleError(e)
+    }
+  }
+
+  /** Move a note into `toFolder` (`''` = vault root) by repathing it on the server. */
+  async function moveNote(id: string, toFolder: string) {
+    await saveNow()
+    const note = noteItems.find((n) => n.id === id)
+    if (!note) return
+    const base = note.path.split('/').pop()!
+    const to = toFolder ? `${toFolder}/${base}` : base
+    if (to === note.path) return // already there
+    try {
+      const { results } = await push(serverUrl, token, [
+        {
+          id,
+          path: to,
+          content: note.content,
+          updatedAt: Date.now(),
+          deleted: false,
+          baseVersion: note.version,
+        },
+      ])
+      applyResults(results)
+    } catch (e) {
+      handleError(e)
+    }
   }
 
   async function deleteCurrent() {
@@ -387,8 +441,8 @@ function Workspace({
   }
 
   const sorted = useMemo(
-    () => [...notes].sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase())),
-    [notes],
+    () => [...noteItems].sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase())),
+    [noteItems],
   )
 
   // List shown in the sidebar: text search, tag filter, or everything.
@@ -405,6 +459,13 @@ function Workspace({
     }
     return sorted
   }, [sorted, query, tagFilter])
+
+  // Folder/file tree shown when not searching or tag-filtering.
+  const tree = useMemo(
+    () => buildTree(noteItems.map((n) => ({ id: n.id, path: n.path })), folderPaths),
+    [noteItems, folderPaths],
+  )
+  const filtering = Boolean(query.trim() || tagFilter)
 
   const previewHtml = useMemo(
     () => marked.parse(wikiLinksToMarkdown(tagsToMarkdown(draft))) as string,
@@ -430,6 +491,9 @@ function Workspace({
               onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
             >
               {mode === 'edit' ? '👁' : '✎'}
+            </button>
+            <button className="icon" title="Move to folder" onClick={() => setMovingId(current.id)}>
+              📂
             </button>
             <button className="icon danger" title="Delete" onClick={() => void deleteCurrent()}>
               🗑
@@ -488,6 +552,9 @@ function Workspace({
             <button className="icon" title="New note" onClick={() => void newNote()}>
               ＋
             </button>
+            <button className="icon" title="New folder" onClick={() => void newFolder()}>
+              📁
+            </button>
             <button className="icon" title="Log out" onClick={onLogout}>
               ⎋
             </button>
@@ -509,21 +576,62 @@ function Workspace({
               </button>
             </div>
           )}
-          {listed.length === 0 ? (
-            <p className="empty">
-              {query || tagFilter ? 'No matching notes.' : 'No notes yet. Create one with ＋.'}
-            </p>
+          {filtering ? (
+            listed.length === 0 ? (
+              <p className="empty">No matching notes.</p>
+            ) : (
+              <ul className="list">
+                {listed.map((n) => (
+                  <li key={n.id} className="list-row" onClick={() => void openNote(n.id)}>
+                    <span className="list-name">{noteName(n.path)}</span>
+                    <span className="list-path">{n.path}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : noteItems.length === 0 && folderPaths.length === 0 ? (
+            <p className="empty">No notes yet. Create one with ＋.</p>
           ) : (
-            <ul className="list">
-              {listed.map((n) => (
-                <li key={n.id} className="list-row" onClick={() => void openNote(n.id)}>
-                  <span className="list-name">{noteName(n.path)}</span>
-                  <span className="list-path">{n.path}</span>
-                </li>
-              ))}
-            </ul>
+            <Tree
+              nodes={tree}
+              activeId={null}
+              onSelect={(id) => void openNote(id)}
+              onMove={(id, folder) => void moveNote(id, folder)}
+            />
           )}
         </>
+      )}
+
+      {movingId && (
+        <div className="sheet-backdrop" onClick={() => setMovingId(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">Move to…</div>
+            <ul className="sheet-list">
+              <li
+                onClick={() => {
+                  void moveNote(movingId, '')
+                  setMovingId(null)
+                }}
+              >
+                🏠 (vault root)
+              </li>
+              {folderPaths
+                .slice()
+                .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+                .map((f) => (
+                  <li
+                    key={f}
+                    onClick={() => {
+                      void moveNote(movingId, f)
+                      setMovingId(null)
+                    }}
+                  >
+                    📁 {f}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        </div>
       )}
 
       {error && (

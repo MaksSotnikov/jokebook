@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import { buildLinkGraph, noteName, parseTags } from '@notes/core'
 import {
+  createFolder,
   createNote,
   deleteNote,
   indexVault,
+  listFolders,
   onVaultChanged,
   pickVault,
   readAllNotes,
   readNote,
+  renameNote,
   searchNotes,
   watchVault,
   writeNote,
@@ -56,6 +59,9 @@ function renderSnippet(snippet: string): string {
 function App() {
   const [vault, setVault] = useState<string | null>(() => localStorage.getItem(VAULT_KEY))
   const [index, setIndex] = useState<NoteContent[]>([])
+  // Explicit folder list (incl. empty ones), so the tree shows folders that
+  // hold no notes yet and can serve as drag-and-drop targets.
+  const [folders, setFolders] = useState<string[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [status, setStatus] = useState<SaveStatus>('saved')
@@ -77,7 +83,7 @@ function App() {
         .sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase())),
     [index],
   )
-  const tree = useMemo(() => buildTree(notes), [notes])
+  const tree = useMemo(() => buildTree(notes, folders), [notes, folders])
   const noteNames = useMemo(() => notes.map((n) => n.name), [notes])
   const allPaths = useMemo(() => index.map((n) => n.path), [index])
 
@@ -140,7 +146,9 @@ function App() {
 
   const loadIndex = useCallback(async (v: string) => {
     try {
-      setIndex(await readAllNotes(v))
+      const [notes, dirs] = await Promise.all([readAllNotes(v), listFolders(v)])
+      setIndex(notes)
+      setFolders(dirs)
       await indexVault(v) // keep the FTS index in lockstep with disk
     } catch (e) {
       setError(String(e))
@@ -249,6 +257,37 @@ function App() {
     }
   }
 
+  async function newFolder() {
+    if (!vault) return
+    const name = window.prompt('New folder name:')?.trim()
+    if (!name) return
+    try {
+      await createFolder(vault, name)
+      await loadIndex(vault) // surfaces the new (empty) folder + any parents
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  /** Move a note into `toFolder` (`''` = vault root) via a rename on disk. */
+  async function moveNote(from: string, toFolder: string) {
+    if (!vault) return
+    const base = from.split('/').pop()!
+    const to = toFolder ? `${toFolder}/${base}` : base
+    if (to === from) return // already in that folder
+    // Cancel any pending save: its closure targets the old path and would
+    // otherwise recreate the file we just renamed away.
+    flushSave()
+    try {
+      await renameNote(vault, from, to)
+      setIndex((prev) => prev.map((n) => (n.path === from ? { ...n, path: to } : n)))
+      if (activePath === from) setActivePath(to)
+      bumpDirty()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   async function removeActive() {
     if (!vault || !activePath) return
     if (!window.confirm(`Delete "${activePath}"? This cannot be undone.`)) return
@@ -330,6 +369,9 @@ function App() {
             <button title="New note" onClick={newNote}>
               ＋
             </button>
+            <button title="New folder" onClick={newFolder}>
+              📁
+            </button>
             <button
               title="Graph view"
               className={showGraph ? 'active' : undefined}
@@ -399,10 +441,10 @@ function App() {
               </ul>
             )}
           </>
-        ) : notes.length === 0 ? (
+        ) : notes.length === 0 && folders.length === 0 ? (
           <p className="empty">No notes yet. Create one with ＋.</p>
         ) : (
-          <FileTree nodes={tree} activePath={activePath} onSelect={openNote} />
+          <FileTree nodes={tree} activePath={activePath} onSelect={openNote} onMove={moveNote} />
         )}
         <SyncPanel vault={vault} onSynced={() => void loadIndex(vault)} editSignal={editTick} />
       </aside>

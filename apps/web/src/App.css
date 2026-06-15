@@ -166,6 +166,108 @@ button {
   margin: 2rem 1rem;
 }
 
+/* ── Tree ────────────────────────────────────────────────────────── */
+.tree,
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tree-row:active {
+  background: var(--accent-soft);
+}
+
+.tree-row.active {
+  background: var(--accent-soft);
+}
+
+.tree-row.folder .label {
+  font-weight: 600;
+}
+
+.tree-row .twisty {
+  width: 1rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.tree-row .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-row.file {
+  cursor: grab;
+}
+
+.tree-row.drop-target,
+.tree.drop-target {
+  background: var(--accent-soft);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+/* ── Move-to-folder sheet ────────────────────────────────────────── */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 20;
+}
+
+.sheet {
+  background: var(--bg);
+  width: 100%;
+  max-width: 760px;
+  max-height: 70vh;
+  border-radius: 14px 14px 0 0;
+  overflow-y: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sheet-head {
+  padding: 0.9rem 1rem 0.5rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+
+.sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sheet-list li {
+  padding: 0.8rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.sheet-list li:active {
+  background: var(--accent-soft);
+}
+
 /* ── Tags ────────────────────────────────────────────────────────── */
 .tag-chip {
   border: 1px solid var(--tag);
