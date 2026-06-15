@@ -368,15 +368,19 @@ function Workspace({
 
   /** Import one or more Obsidian `.md` files as notes, preserving any folder
    * structure carried in the picked paths. Existing paths are skipped so an
-   * import never silently shadows a note already in the vault. */
-  async function importFiles(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return
-    await saveNow()
-    const files = [...fileList].filter((f) => f.name.toLowerCase().endsWith('.md'))
+   * import never silently shadows a note already in the vault.
+   *
+   * Takes an already-snapshotted `File[]` (not the input's live `FileList`):
+   * the change handler resets `input.value` right after calling us, which
+   * empties the `FileList` — but the `File` objects stay readable. */
+  async function importFiles(picked: File[]) {
+    if (picked.length === 0) return
+    const files = picked.filter((f) => f.name.toLowerCase().endsWith('.md'))
     if (files.length === 0) {
       setError('Select one or more .md files to import.')
       return
     }
+    await saveNow()
     const taken = new Set(noteItems.map((n) => n.path))
     const folders = new Set<string>()
     const items: PushItem[] = []
@@ -676,8 +680,11 @@ function Workspace({
         multiple
         hidden
         onChange={(e) => {
-          void importFiles(e.currentTarget.files)
-          e.currentTarget.value = '' // allow re-importing the same file
+          // Snapshot the files first: clearing value (so the same file can be
+          // re-picked) empties the live FileList, but these File refs survive.
+          const picked = e.currentTarget.files ? [...e.currentTarget.files] : []
+          e.currentTarget.value = ''
+          void importFiles(picked)
         }}
       />
       <div className="sb-user" title={auth.user.email}>
