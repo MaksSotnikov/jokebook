@@ -1,7 +1,8 @@
 # Single-stage image: builds @notes/core → @notes/web → @notes/server and runs
 # the Fastify server, which also serves the built web client (apps/web/dist) on
 # the same origin. Debian-slim (glibc) so @node-rs/argon2's prebuilt binary loads.
-FROM node:20-slim
+# Node 22: pnpm 11.x relies on builtins missing in Node 20 (ERR_UNKNOWN_BUILTIN_MODULE).
+FROM node:22-slim
 
 # pnpm via corepack; version is pinned by the root package.json "packageManager".
 RUN corepack enable
