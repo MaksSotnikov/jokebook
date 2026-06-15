@@ -520,8 +520,7 @@ button {
 
 /* ── Joke block (in preview) ─────────────────────────────────────── */
 .joke {
-  max-width: 760px;
-  margin: 0.9rem auto;
+  margin: 0.9rem 0;
   width: 100%;
   border: 1px solid var(--border);
   border-left: 4px solid var(--joke-border);
@@ -581,8 +580,7 @@ button {
   padding: 1rem 1.2rem 2rem;
   line-height: 1.7;
   word-wrap: break-word;
-  max-width: 760px;
-  margin: 0 auto;
+  max-width: 820px;
   width: 100%;
 }
 
@@ -689,6 +687,40 @@ button {
 
 .welcome-btn:active {
   transform: scale(0.97);
+}
+
+/* ── Joke stats (end-of-note summary) ────────────────────────────── */
+.joke-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--joke-border);
+  background: var(--joke-bg);
+  font-size: 0.82rem;
+}
+
+.joke-stats-count {
+  font-weight: 700;
+  color: var(--joke-border);
+}
+
+.joke-stats-avg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text);
+}
+
+.joke-stats-avg .star {
+  font-size: 0.9rem;
+  padding: 0;
+}
+
+.joke-stats-dim {
+  color: var(--text-dim);
 }
 
 /* ── Backlinks ───────────────────────────────────────────────────── */

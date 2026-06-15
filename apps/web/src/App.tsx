@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import { buildLinkGraph, noteName, parseTags, type ApiNote, type PushResult } from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
 import { buildTree, Tree } from './Tree'
-import { parseJokes, setJokeStars, wrapJoke } from './jokes'
+import { parseJokes, setJokeStars, wrapJoke, type JokeSegment } from './jokes'
 import {
   decodeTagHref,
   decodeWikiHref,
@@ -517,6 +517,14 @@ function Workspace({
   const segments = useMemo(() => parseJokes(draft), [draft])
   const currentTags = useMemo(() => parseTags(draft), [draft])
 
+  // Joke tally for the end-of-note summary; average over rated jokes only.
+  const jokeStats = useMemo(() => {
+    const jokes = segments.filter((s): s is JokeSegment => s.type === 'joke')
+    const rated = jokes.filter((j) => j.stars > 0)
+    const avg = rated.length ? rated.reduce((sum, j) => sum + j.stars, 0) / rated.length : null
+    return { count: jokes.length, rated: rated.length, avg }
+  }, [segments])
+
   const sidebar = (
     <aside className="sidebar">
       <header className="sb-head">
@@ -682,6 +690,23 @@ function Workspace({
           </div>
         )}
       </div>
+      {jokeStats.count > 0 && (
+        <div className="joke-stats">
+          <span className="joke-stats-count">
+            🎤 {jokeStats.count} joke{jokeStats.count > 1 ? 's' : ''}
+          </span>
+          <span className="joke-stats-avg">
+            {jokeStats.avg !== null ? (
+              <>
+                avg <span className="star on">★</span> {jokeStats.avg.toFixed(1)}
+                <span className="joke-stats-dim"> ({jokeStats.rated} rated)</span>
+              </>
+            ) : (
+              <span className="joke-stats-dim">no ratings yet</span>
+            )}
+          </span>
+        </div>
+      )}
       <footer className="backlinks">
         <span className="backlinks-head">Backlinks ({backlinks.length})</span>
         {backlinks.length === 0 ? (
