@@ -1,29 +1,35 @@
 :root {
   --bg: #ffffff;
-  --bg-alt: #f4f5f7;
-  --bg-hover: #e9ebef;
-  --border: #e0e2e7;
+  --bg-alt: #f7f8fa;
+  --bg-hover: #eef0f4;
+  --border: #e6e8ec;
   --text: #1d1f23;
   --text-dim: #6b7280;
   --accent: #4f46e5;
-  --accent-soft: #e0e7ff;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef0ff;
   --tag: #0e7490;
   --danger: #dc2626;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --shadow-lg: 0 10px 30px rgba(16, 24, 40, 0.18);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1e1f22;
-    --bg-alt: #25272b;
-    --bg-hover: #313338;
-    --border: #36383d;
-    --text: #e6e7e9;
+    --bg: #18191c;
+    --bg-alt: #202226;
+    --bg-hover: #2b2d33;
+    --border: #313338;
+    --text: #e8eaed;
     --text-dim: #9aa0a6;
     --accent: #818cf8;
-    --accent-soft: #312e57;
+    --accent-hover: #a5b0ff;
+    --accent-soft: #2a2952;
     --tag: #22d3ee;
     --danger: #f87171;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 34px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -50,7 +56,7 @@ button {
   cursor: pointer;
 }
 
-/* ── App shell (single column, mobile-first) ─────────────────────── */
+/* ── App shell ───────────────────────────────────────────────────── */
 .app {
   display: flex;
   flex-direction: column;
@@ -59,37 +65,118 @@ button {
   margin: 0 auto;
 }
 
+/* Desktop: sidebar + content. */
+.app.wide {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  max-width: none;
+  height: 100dvh;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-alt);
+}
+
+.app.wide .sidebar {
+  border-right: 1px solid var(--border);
+}
+
+.sb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.7rem 0.7rem;
+  padding-top: max(0.7rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.brand-mark {
+  font-size: 1.15rem;
+}
+
+.sb-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.sb-user {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Content pane ────────────────────────────────────────────────── */
+.content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
 .bar {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.5rem 0.6rem;
-  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding: 0.55rem 0.7rem;
+  padding-top: max(0.55rem, env(safe-area-inset-top));
   border-bottom: 1px solid var(--border);
-  background: var(--bg-alt);
+  background: var(--bg);
+}
+
+.app.wide .bar {
+  padding-top: 0.6rem;
 }
 
 .bar-title {
   flex: 1;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
   background: var(--bg);
-  border-radius: 8px;
-  min-width: 2.4rem;
-  height: 2.4rem;
-  font-size: 1.05rem;
+  border-radius: 9px;
+  min-width: 2.3rem;
+  height: 2.3rem;
+  font-size: 1.02rem;
   line-height: 1;
+  transition: background 0.12s, border-color 0.12s, transform 0.06s;
 }
 
 .icon:hover {
   background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+
+.icon:active {
+  transform: scale(0.94);
 }
 
 .icon.danger {
@@ -98,13 +185,14 @@ button {
 
 .icon:disabled {
   opacity: 0.5;
+  cursor: default;
 }
 
 .status {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .status.saving {
@@ -115,26 +203,28 @@ button {
   color: var(--danger);
 }
 
-/* ── List view ───────────────────────────────────────────────────── */
+/* ── Search & list ───────────────────────────────────────────────── */
 .search {
   margin: 0.6rem;
-  padding: 0.6rem 0.7rem;
+  padding: 0.55rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg);
   color: var(--text);
-  font-size: 1rem;
+  font-size: 0.95rem;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 .search:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0.25rem;
   overflow-y: auto;
   flex: 1;
 }
@@ -142,12 +232,17 @@ button {
 .list-row {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.7rem 0.8rem;
-  border-bottom: 1px solid var(--border);
+  gap: 0.12rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 9px;
+  transition: background 0.12s;
 }
 
-.list-row:active {
+.list-row:hover {
+  background: var(--bg-hover);
+}
+
+.list-row.active {
   background: var(--accent-soft);
 }
 
@@ -156,7 +251,7 @@ button {
 }
 
 .list-path {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-dim);
 }
 
@@ -164,6 +259,7 @@ button {
   color: var(--text-dim);
   text-align: center;
   margin: 2rem 1rem;
+  font-size: 0.9rem;
 }
 
 /* ── Tree ────────────────────────────────────────────────────────── */
@@ -177,24 +273,28 @@ button {
 .tree {
   overflow-y: auto;
   flex: 1;
+  padding: 0.25rem;
 }
 
 .tree-row {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.6rem 0.8rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.45rem 0.5rem;
+  border-radius: 9px;
   white-space: nowrap;
   overflow: hidden;
+  transition: background 0.12s;
 }
 
-.tree-row:active {
-  background: var(--accent-soft);
+.tree-row:hover {
+  background: var(--bg-hover);
 }
 
 .tree-row.active {
   background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .tree-row.folder .label {
@@ -204,7 +304,7 @@ button {
 .tree-row .twisty {
   width: 1rem;
   color: var(--text-dim);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .tree-row .label {
@@ -237,15 +337,21 @@ button {
 .sheet {
   background: var(--bg);
   width: 100%;
-  max-width: 760px;
+  max-width: 440px;
   max-height: 70vh;
-  border-radius: 14px 14px 0 0;
+  border-radius: 16px 16px 0 0;
   overflow-y: auto;
   padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: var(--shadow-lg);
+}
+
+.app.wide ~ .sheet-backdrop .sheet,
+.sheet {
+  margin: 0 auto;
 }
 
 .sheet-head {
-  padding: 0.9rem 1rem 0.5rem;
+  padding: 0.95rem 1.1rem 0.5rem;
   font-weight: 600;
   color: var(--text-dim);
   position: sticky;
@@ -260,12 +366,13 @@ button {
 }
 
 .sheet-list li {
-  padding: 0.8rem 1rem;
+  padding: 0.8rem 1.1rem;
   border-top: 1px solid var(--border);
+  transition: background 0.12s;
 }
 
-.sheet-list li:active {
-  background: var(--accent-soft);
+.sheet-list li:hover {
+  background: var(--bg-hover);
 }
 
 /* ── Tags ────────────────────────────────────────────────────────── */
@@ -274,15 +381,20 @@ button {
   color: var(--tag);
   background: transparent;
   border-radius: 999px;
-  padding: 0.15rem 0.6rem;
-  font-size: 0.8rem;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.78rem;
+  transition: background 0.12s;
+}
+
+.tag-chip:hover {
+  background: var(--bg-hover);
 }
 
 .tagrow {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  padding: 0.5rem 0.6rem;
+  padding: 0.55rem 0.8rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -293,7 +405,7 @@ button {
   margin: 0 0.6rem 0.4rem;
 }
 
-/* ── Note view ───────────────────────────────────────────────────── */
+/* ── Note body ───────────────────────────────────────────────────── */
 .note-body {
   flex: 1;
   overflow-y: auto;
@@ -301,17 +413,18 @@ button {
 }
 
 .editor {
+  display: block;
   width: 100%;
   height: 100%;
   min-height: 50vh;
   border: none;
   resize: none;
-  padding: 0.8rem;
+  padding: 1rem 1.1rem;
   background: var(--bg);
   color: var(--text);
   font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
   font-size: 0.95rem;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .editor:focus {
@@ -319,47 +432,134 @@ button {
 }
 
 .preview {
-  padding: 0.4rem 0.9rem 1rem;
-  line-height: 1.6;
+  padding: 1rem 1.2rem 2rem;
+  line-height: 1.7;
   word-wrap: break-word;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.preview h1,
+.preview h2,
+.preview h3 {
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.preview h1 {
+  font-size: 1.7rem;
 }
 
 .preview a {
   color: var(--accent);
+  text-decoration: none;
+}
+
+.preview a:hover {
+  text-decoration: underline;
 }
 
 .preview pre {
   background: var(--bg-alt);
-  padding: 0.7rem;
-  border-radius: 6px;
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
   overflow-x: auto;
+  border: 1px solid var(--border);
 }
 
 .preview code {
   background: var(--bg-alt);
-  padding: 0.1rem 0.3rem;
-  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
+  font-size: 0.9em;
+}
+
+.preview pre code {
+  background: none;
+  padding: 0;
+}
+
+.preview blockquote {
+  margin: 0.8rem 0;
+  padding: 0.2rem 0 0.2rem 1rem;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
 }
 
 .preview img {
   max-width: 100%;
+  border-radius: 8px;
+}
+
+.preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.4rem 0;
+}
+
+/* ── Welcome (desktop empty state) ───────────────────────────────── */
+.welcome {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.welcome-inner {
+  max-width: 340px;
+  padding: 1.5rem;
+}
+
+.welcome-mark {
+  font-size: 3rem;
+}
+
+.welcome h2 {
+  margin: 0.6rem 0 0.4rem;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+}
+
+.welcome p {
+  margin: 0 0 1.3rem;
+  color: var(--text-dim);
+}
+
+.welcome-btn {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.65rem 1.3rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  box-shadow: var(--shadow);
+  transition: background 0.12s, transform 0.06s;
+}
+
+.welcome-btn:hover {
+  background: var(--accent-hover);
+}
+
+.welcome-btn:active {
+  transform: scale(0.97);
 }
 
 /* ── Backlinks ───────────────────────────────────────────────────── */
 .backlinks {
   border-top: 1px solid var(--border);
   background: var(--bg-alt);
-  padding: 0.5rem 0.8rem;
+  padding: 0.6rem 0.9rem;
   max-height: 28vh;
   overflow-y: auto;
 }
 
 .backlinks-head {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 600;
   color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .empty-inline {
@@ -375,64 +575,93 @@ button {
 }
 
 .backlinks li {
-  padding: 0.4rem 0;
+  padding: 0.4rem 0.2rem;
   color: var(--accent);
-  border-bottom: 1px solid var(--border);
+  border-radius: 7px;
+  transition: background 0.12s;
+}
+
+.backlinks li:hover {
+  background: var(--bg-hover);
 }
 
 /* ── Login ───────────────────────────────────────────────────────── */
 .login {
-  max-width: 360px;
+  max-width: 380px;
   margin: 0 auto;
-  padding: 2rem 1.2rem;
+  min-height: 100dvh;
+  padding: 2rem 1.3rem;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  justify-content: center;
+  gap: 0.7rem;
 }
 
 .login h1 {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.9rem;
+  letter-spacing: -0.02em;
+}
+
+.login h1::before {
+  content: '📓';
 }
 
 .login .hint {
   color: var(--text-dim);
-  margin: 0;
+  margin: 0 0 0.6rem;
 }
 
 .login label {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 500;
   color: var(--text-dim);
 }
 
 .login input {
-  padding: 0.6rem 0.7rem;
+  padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg);
   color: var(--text);
   font-size: 1rem;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 .login input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .login-actions {
   display: flex;
   gap: 0.6rem;
-  margin-top: 0.4rem;
+  margin-top: 0.6rem;
 }
 
 .login-actions button {
   flex: 1;
   padding: 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg);
+  font-weight: 600;
+  transition: background 0.12s, transform 0.06s;
+}
+
+.login-actions button:hover {
+  background: var(--bg-hover);
+}
+
+.login-actions button:active {
+  transform: scale(0.98);
 }
 
 .login-actions .primary {
@@ -441,8 +670,13 @@ button {
   color: #fff;
 }
 
+.login-actions .primary:hover {
+  background: var(--accent-hover);
+}
+
 .login-actions button:disabled {
   opacity: 0.6;
+  cursor: default;
 }
 
 .login-error {
@@ -454,15 +688,16 @@ button {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(1rem + env(safe-area-inset-bottom));
+  bottom: calc(1.1rem + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   max-width: 90%;
   background: var(--danger);
   color: #fff;
-  padding: 0.6rem 0.9rem;
-  border-radius: 8px;
+  padding: 0.65rem 0.95rem;
+  border-radius: 10px;
   font-size: 0.85rem;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
 }
 
 .toast .dismiss {

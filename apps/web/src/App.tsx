@@ -45,6 +45,20 @@ function loadAuth(): Auth | null {
   }
 }
 
+/** True on viewports wide enough for the two-pane desktop layout. */
+function useWide(): boolean {
+  const [wide, setWide] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 860px)').matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 860px)')
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return wide
+}
+
 export default function App() {
   const [auth, setAuth] = useState<Auth | null>(loadAuth)
   const [error, setError] = useState<string | null>(null)
@@ -152,6 +166,7 @@ function Workspace({
   setError: (e: string | null) => void
 }) {
   const { serverUrl, token } = auth
+  const wide = useWide()
   const [notes, setNotes] = useState<ApiNote[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -473,133 +488,171 @@ function Workspace({
   )
   const currentTags = useMemo(() => parseTags(draft), [draft])
 
-  return (
-    <div className="app">
-      {current ? (
-        <>
-          <header className="bar">
-            <button className="icon" title="Back" onClick={() => void back()}>
-              ‹
-            </button>
-            <span className="bar-title" title={current.path}>
-              {noteName(current.path)}
-            </span>
-            <span className={`status ${status}`}>{status}</span>
-            <button
-              className="icon"
-              title={mode === 'edit' ? 'Preview' : 'Edit'}
-              onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
-            >
-              {mode === 'edit' ? '👁' : '✎'}
-            </button>
-            <button className="icon" title="Move to folder" onClick={() => setMovingId(current.id)}>
-              📂
-            </button>
-            <button className="icon danger" title="Delete" onClick={() => void deleteCurrent()}>
-              🗑
-            </button>
-          </header>
-          {currentTags.length > 0 && (
-            <div className="tagrow">
-              {currentTags.map((tag) => (
-                <button key={tag} className="tag-chip" onClick={() => activateTag(tag)}>
-                  #{tag}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="note-body">
-            {mode === 'edit' ? (
-              <textarea
-                className="editor"
-                value={draft}
-                onChange={(e) => onEdit(e.currentTarget.value)}
-                spellCheck={false}
-                autoCapitalize="sentences"
-              />
-            ) : (
-              <div
-                className="preview"
-                onClick={onPreviewClick}
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
-            )}
-          </div>
-          <footer className="backlinks">
-            <span className="backlinks-head">Backlinks ({backlinks.length})</span>
-            {backlinks.length === 0 ? (
-              <span className="empty-inline">No notes link here yet.</span>
-            ) : (
-              <ul>
-                {backlinks.map((path) => (
-                  <li key={path} onClick={() => openByPath(path)}>
-                    {noteName(path)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </footer>
-        </>
+  const sidebar = (
+    <aside className="sidebar">
+      <header className="sb-head">
+        <div className="brand">
+          <span className="brand-mark">📓</span>
+          <span className="brand-name">Notes</span>
+        </div>
+        <div className="sb-actions">
+          <button className="icon" title="Refresh" disabled={syncing} onClick={() => void refresh()}>
+            {syncing ? '…' : '↻'}
+          </button>
+          <button className="icon" title="New note" onClick={() => void newNote()}>
+            ＋
+          </button>
+          <button className="icon" title="New folder" onClick={() => void newFolder()}>
+            📁
+          </button>
+          <button className="icon" title="Log out" onClick={onLogout}>
+            ⎋
+          </button>
+        </div>
+      </header>
+      <div className="sb-user" title={auth.user.email}>
+        {auth.user.email}
+      </div>
+      <input
+        className="search"
+        placeholder="Search notes…"
+        value={query}
+        onChange={(e) => {
+          setTagFilter(null)
+          setQuery(e.currentTarget.value)
+        }}
+      />
+      {tagFilter && (
+        <div className="tag-filter">
+          <span className="tag-chip">#{tagFilter}</span>
+          <button className="icon" title="Clear" onClick={() => setTagFilter(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+      {filtering ? (
+        listed.length === 0 ? (
+          <p className="empty">No matching notes.</p>
+        ) : (
+          <ul className="list">
+            {listed.map((n) => (
+              <li
+                key={n.id}
+                className={`list-row${n.id === selectedId ? ' active' : ''}`}
+                onClick={() => void openNote(n.id)}
+              >
+                <span className="list-name">{noteName(n.path)}</span>
+                <span className="list-path">{n.path}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : noteItems.length === 0 && folderPaths.length === 0 ? (
+        <p className="empty">No notes yet. Create one with ＋.</p>
       ) : (
-        <>
-          <header className="bar">
-            <span className="bar-title" title={auth.user.email}>
-              {auth.user.email}
-            </span>
-            <button className="icon" title="Refresh" disabled={syncing} onClick={() => void refresh()}>
-              {syncing ? '…' : '↻'}
+        <Tree
+          nodes={tree}
+          activeId={selectedId}
+          onSelect={(id) => void openNote(id)}
+          onMove={(id, folder) => void moveNote(id, folder)}
+        />
+      )}
+    </aside>
+  )
+
+  const noteView = current && (
+    <section className="content">
+      <header className="bar">
+        {!wide && (
+          <button className="icon" title="Back" onClick={() => void back()}>
+            ‹
+          </button>
+        )}
+        <span className="bar-title" title={current.path}>
+          {noteName(current.path)}
+        </span>
+        <span className={`status ${status}`}>{status}</span>
+        <button
+          className="icon"
+          title={mode === 'edit' ? 'Preview' : 'Edit'}
+          onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
+        >
+          {mode === 'edit' ? '👁' : '✎'}
+        </button>
+        <button className="icon" title="Move to folder" onClick={() => setMovingId(current.id)}>
+          📂
+        </button>
+        <button className="icon danger" title="Delete" onClick={() => void deleteCurrent()}>
+          🗑
+        </button>
+      </header>
+      {currentTags.length > 0 && (
+        <div className="tagrow">
+          {currentTags.map((tag) => (
+            <button key={tag} className="tag-chip" onClick={() => activateTag(tag)}>
+              #{tag}
             </button>
-            <button className="icon" title="New note" onClick={() => void newNote()}>
-              ＋
-            </button>
-            <button className="icon" title="New folder" onClick={() => void newFolder()}>
-              📁
-            </button>
-            <button className="icon" title="Log out" onClick={onLogout}>
-              ⎋
-            </button>
-          </header>
-          <input
-            className="search"
-            placeholder="Search notes…"
-            value={query}
-            onChange={(e) => {
-              setTagFilter(null)
-              setQuery(e.currentTarget.value)
-            }}
+          ))}
+        </div>
+      )}
+      <div className="note-body">
+        {mode === 'edit' ? (
+          <textarea
+            className="editor"
+            value={draft}
+            onChange={(e) => onEdit(e.currentTarget.value)}
+            spellCheck={false}
+            autoCapitalize="sentences"
           />
-          {tagFilter && (
-            <div className="tag-filter">
-              <span className="tag-chip">#{tagFilter}</span>
-              <button className="icon" title="Clear" onClick={() => setTagFilter(null)}>
-                ✕
-              </button>
-            </div>
-          )}
-          {filtering ? (
-            listed.length === 0 ? (
-              <p className="empty">No matching notes.</p>
-            ) : (
-              <ul className="list">
-                {listed.map((n) => (
-                  <li key={n.id} className="list-row" onClick={() => void openNote(n.id)}>
-                    <span className="list-name">{noteName(n.path)}</span>
-                    <span className="list-path">{n.path}</span>
-                  </li>
-                ))}
-              </ul>
-            )
-          ) : noteItems.length === 0 && folderPaths.length === 0 ? (
-            <p className="empty">No notes yet. Create one with ＋.</p>
-          ) : (
-            <Tree
-              nodes={tree}
-              activeId={null}
-              onSelect={(id) => void openNote(id)}
-              onMove={(id, folder) => void moveNote(id, folder)}
-            />
-          )}
+        ) : (
+          <div
+            className="preview"
+            onClick={onPreviewClick}
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+        )}
+      </div>
+      <footer className="backlinks">
+        <span className="backlinks-head">Backlinks ({backlinks.length})</span>
+        {backlinks.length === 0 ? (
+          <span className="empty-inline">No notes link here yet.</span>
+        ) : (
+          <ul>
+            {backlinks.map((path) => (
+              <li key={path} onClick={() => openByPath(path)}>
+                {noteName(path)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </footer>
+    </section>
+  )
+
+  const welcome = (
+    <section className="content welcome">
+      <div className="welcome-inner">
+        <div className="welcome-mark">📓</div>
+        <h2>Your notes, everywhere</h2>
+        <p>Pick a note from the sidebar, or create a new one to get started.</p>
+        <button className="welcome-btn" onClick={() => void newNote()}>
+          ＋ New note
+        </button>
+      </div>
+    </section>
+  )
+
+  return (
+    <div className={`app${wide ? ' wide' : ''}`}>
+      {wide ? (
+        <>
+          {sidebar}
+          {current ? noteView : welcome}
         </>
+      ) : current ? (
+        noteView
+      ) : (
+        sidebar
       )}
 
       {movingId && (
