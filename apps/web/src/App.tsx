@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import { buildLinkGraph, noteName, parseTags, type ApiNote, type PushResult } from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
 import { buildTree, Tree } from './Tree'
+import { parseJokes, setJokeStars, wrapJoke } from './jokes'
 import {
   decodeTagHref,
   decodeWikiHref,
@@ -34,6 +35,11 @@ function newId(): string {
   b[8] = (b[8] & 0x3f) | 0x80
   const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+/** Render note markdown (with wiki-link and tag transforms) to HTML. */
+function renderMd(text: string): string {
+  return marked.parse(wikiLinksToMarkdown(tagsToMarkdown(text))) as string
 }
 
 function loadAuth(): Auth | null {
@@ -181,6 +187,10 @@ function Workspace({
 
   const cursorRef = useRef(0)
   const saveTimer = useRef<number | null>(null)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
+  // Last textarea selection, tracked so the "Mark as joke" button still works
+  // when tapping it collapses the selection (common on mobile).
+  const selRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 })
   // Pending unsaved edit, flushed on navigation so switching notes never drops it.
   const pending = useRef<{ id: string; path: string; text: string; baseVersion: number } | null>(
     null,
@@ -308,6 +318,27 @@ function Workspace({
     pending.current = { id: current.id, path: current.path, text, baseVersion: current.version }
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DEBOUNCE_MS)
+  }
+
+  /** Wrap the current editor selection as a joke block, then show the preview. */
+  function markJoke() {
+    const ta = editorRef.current
+    if (!ta || !current) return
+    let start = ta.selectionStart
+    let end = ta.selectionEnd
+    if (start === end) ({ start, end } = selRef.current)
+    if (start === end) {
+      setError('Select some text first, then mark it as a joke.')
+      return
+    }
+    const next = wrapJoke(draft.slice(0, start), draft.slice(start, end), draft.slice(end))
+    onEdit(next)
+    setMode('preview')
+  }
+
+  /** Set the `index`-th joke's star rating in the current note. */
+  function rateJoke(index: number, stars: number) {
+    onEdit(setJokeStars(draft, index, stars))
   }
 
   async function openNote(id: string) {
@@ -482,10 +513,8 @@ function Workspace({
   )
   const filtering = Boolean(query.trim() || tagFilter)
 
-  const previewHtml = useMemo(
-    () => marked.parse(wikiLinksToMarkdown(tagsToMarkdown(draft))) as string,
-    [draft],
-  )
+  // Split the note into text / joke segments so jokes render as rated blocks.
+  const segments = useMemo(() => parseJokes(draft), [draft])
   const currentTags = useMemo(() => parseTags(draft), [draft])
 
   const sidebar = (
@@ -610,19 +639,47 @@ function Workspace({
       )}
       <div className="note-body">
         {mode === 'edit' ? (
-          <textarea
-            className="editor"
-            value={draft}
-            onChange={(e) => onEdit(e.currentTarget.value)}
-            spellCheck={false}
-            autoCapitalize="sentences"
-          />
+          <div className="editor-wrap">
+            <div className="editor-toolbar">
+              <button
+                className="joke-btn"
+                title="Wrap the selected text as a joke"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={markJoke}
+              >
+                🎤 Mark as joke
+              </button>
+            </div>
+            <textarea
+              ref={editorRef}
+              className="editor"
+              value={draft}
+              onChange={(e) => onEdit(e.currentTarget.value)}
+              onSelect={(e) =>
+                (selRef.current = {
+                  start: e.currentTarget.selectionStart,
+                  end: e.currentTarget.selectionEnd,
+                })
+              }
+              spellCheck={false}
+              autoCapitalize="sentences"
+            />
+          </div>
         ) : (
-          <div
-            className="preview"
-            onClick={onPreviewClick}
-            dangerouslySetInnerHTML={{ __html: previewHtml }}
-          />
+          <div className="preview" onClick={onPreviewClick}>
+            {segments.map((seg, i) =>
+              seg.type === 'text' ? (
+                <div key={i} dangerouslySetInnerHTML={{ __html: renderMd(seg.value) }} />
+              ) : (
+                <JokeBlock
+                  key={i}
+                  stars={seg.stars}
+                  html={renderMd(seg.body)}
+                  onRate={(n) => rateJoke(seg.index, n)}
+                />
+              ),
+            )}
+          </div>
         )}
       </div>
       <footer className="backlinks">
@@ -705,6 +762,46 @@ function Workspace({
           {error} <span className="dismiss">✕</span>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Joke block ────────────────────────────────────────────────────────────
+
+/** A highlighted joke with a clickable 5-star rating. Clicking the current
+ * top star again clears the rating. */
+function JokeBlock({
+  stars,
+  html,
+  onRate,
+}: {
+  stars: number
+  html: string
+  onRate: (stars: number) => void
+}) {
+  return (
+    <div className={`joke${stars > 0 ? ' rated' : ''}`}>
+      <div className="joke-rail">
+        <span className="joke-badge">🎤 Joke</span>
+        <div className="joke-stars" role="group" aria-label="Rating">
+          {[1, 2, 3, 4, 5].map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={`star${v <= stars ? ' on' : ''}`}
+              title={`${v} star${v > 1 ? 's' : ''}`}
+              aria-label={`${v} star${v > 1 ? 's' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onRate(v === stars ? 0 : v)
+              }}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="joke-body" dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   )
 }
