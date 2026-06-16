@@ -22,6 +22,28 @@ import {
 import { authenticate, pull, push, UnauthorizedError } from './api'
 import { buildTree, Tree } from './Tree'
 import {
+  IconArrowDown,
+  IconArrowUp,
+  IconChevronLeft,
+  IconClose,
+  IconCopy,
+  IconEdit,
+  IconEye,
+  IconFolder,
+  IconFolderPlus,
+  IconHome,
+  IconImport,
+  IconLogout,
+  IconMove,
+  IconNote,
+  IconPin,
+  IconPlus,
+  IconRefresh,
+  IconRename,
+  IconTag,
+  IconTrash,
+} from './icons'
+import {
   decodeTagHref,
   decodeWikiHref,
   resolveTarget,
@@ -845,23 +867,23 @@ function Workspace({
     <aside className="sidebar">
       <header className="sb-head">
         <div className="brand">
-          <span className="brand-mark">📓</span>
+          <span className="brand-mark">🎤</span>
           <span className="brand-name">Joke book</span>
         </div>
         <div className="sb-actions">
           <button
-            className="icon"
+            className={`icon${syncing ? ' spinning' : ''}`}
             title="Refresh"
             disabled={syncing}
             onClick={() => void refresh()}
           >
-            {syncing ? '…' : '↻'}
+            <IconRefresh />
           </button>
           <button className="icon" title="New note" onClick={() => void newNote()}>
-            ＋
+            <IconPlus />
           </button>
           <button className="icon" title="New folder" onClick={() => void newFolder()}>
-            📁
+            <IconFolderPlus />
           </button>
           <button
             className={`icon${showTags ? ' active' : ''}`}
@@ -872,14 +894,14 @@ function Workspace({
               setShowTags((s) => !s)
             }}
           >
-            🏷
+            <IconTag />
           </button>
           <button
             className="icon"
             title="Import .md files from Obsidian"
             onClick={() => importRef.current?.click()}
           >
-            📥
+            <IconImport />
           </button>
           {!wide && (
             <button
@@ -887,11 +909,11 @@ function Workspace({
               title={pinned ? 'Unpin menu' : 'Pin menu'}
               onClick={togglePinned}
             >
-              📌
+              <IconPin />
             </button>
           )}
           <button className="icon" title="Log out" onClick={onLogout}>
-            ⎋
+            <IconLogout />
           </button>
         </div>
       </header>
@@ -926,7 +948,7 @@ function Workspace({
         <div className="tag-filter">
           <span className="tag-chip">#{tagFilter}</span>
           <button className="icon" title="Clear" onClick={() => setTagFilter(null)}>
-            ✕
+            <IconClose />
           </button>
         </div>
       )}
@@ -966,14 +988,14 @@ function Workspace({
                     setMovingId(n.id)
                   }}
                 >
-                  📂
+                  <IconMove />
                 </button>
               </li>
             ))}
           </ul>
         )
       ) : noteItems.length === 0 && folderPaths.length === 0 ? (
-        <p className="empty">No notes yet. Create one with ＋.</p>
+        <p className="empty">No notes yet. Create one with the + button.</p>
       ) : (
         <Tree
           nodes={tree}
@@ -995,7 +1017,7 @@ function Workspace({
       <header className="bar">
         {!twoPane && (
           <button className="icon" title="Back" onClick={() => void back()}>
-            ‹
+            <IconChevronLeft />
           </button>
         )}
         <span className="bar-title" title={current.path}>
@@ -1007,7 +1029,7 @@ function Workspace({
             title={pinned ? 'Unpin menu' : 'Pin menu'}
             onClick={togglePinned}
           >
-            📌
+            <IconPin />
           </button>
         )}
         <span className={`status ${status}`}>{status}</span>
@@ -1016,16 +1038,16 @@ function Workspace({
           title={mode === 'edit' ? 'Preview' : 'Edit'}
           onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
         >
-          {mode === 'edit' ? '👁' : '✎'}
+          {mode === 'edit' ? <IconEye /> : <IconEdit />}
         </button>
         <button className="icon" title="Rename note" onClick={() => void renameNote(current.id)}>
-          ✏️
+          <IconRename />
         </button>
         <button className="icon" title="Move to folder" onClick={() => setMovingId(current.id)}>
-          📂
+          <IconMove />
         </button>
         <button className="icon danger" title="Delete" onClick={() => void deleteCurrent()}>
-          🗑
+          <IconTrash />
         </button>
       </header>
       {currentTags.length > 0 && (
@@ -1099,7 +1121,7 @@ function Workspace({
               Clear
             </button>
             <button className="joke-pickbar-send" onClick={() => setSendingJokes(true)}>
-              📤 Copy to note…
+              <IconCopy /> Copy to note…
             </button>
           </div>
         </div>
@@ -1144,11 +1166,11 @@ function Workspace({
   const welcome = (
     <section className="content welcome">
       <div className="welcome-inner">
-        <div className="welcome-mark">📓</div>
-        <h2>Your notes, everywhere</h2>
-        <p>Pick a note from the sidebar, or create a new one to get started.</p>
+        <div className="welcome-mark">🎤</div>
+        <h2>Tonight&rsquo;s material, ready when you are</h2>
+        <p>Pick a set from the sidebar, or start a new one to write your next bit.</p>
         <button className="welcome-btn" onClick={() => void newNote()}>
-          ＋ New note
+          <IconPlus /> New note
         </button>
       </div>
     </section>
@@ -1226,10 +1248,12 @@ function MoveSheet({
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">Move to…</div>
         <ul className="sheet-list">
-          <li onClick={() => onPick('')}>🏠 (vault root)</li>
+          <li onClick={() => onPick('')}>
+            <IconHome /> (vault root)
+          </li>
           {targets.map((f) => (
             <li key={f} onClick={() => onPick(f)}>
-              📁 {f}
+              <IconFolder /> {f}
             </li>
           ))}
         </ul>
@@ -1264,7 +1288,7 @@ function SendJokesSheet({
           <ul className="sheet-list">
             {notes.map((n) => (
               <li key={n.id} onClick={() => onPick(n.id)}>
-                📝 {n.path}
+                <IconNote /> {n.path}
               </li>
             ))}
           </ul>
@@ -1353,7 +1377,7 @@ function JokeBlock({
               onMove(-1)
             }}
           >
-            ↑
+            <IconArrowUp />
           </button>
           <button
             type="button"
@@ -1366,7 +1390,7 @@ function JokeBlock({
               onMove(1)
             }}
           >
-            ↓
+            <IconArrowDown />
           </button>
         </div>
       </div>
@@ -1386,7 +1410,7 @@ function JokeBlock({
                   onRemoveVersion(vi)
                 }}
               >
-                ✕
+                <IconClose />
               </button>
             )}
           </div>
@@ -1406,7 +1430,7 @@ function JokeBlock({
           onAddVersion()
         }}
       >
-        ➕ Add alternative version
+        <IconPlus /> Add alternative version
       </button>
     </div>
   )

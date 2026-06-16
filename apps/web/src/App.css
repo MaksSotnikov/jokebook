@@ -1,21 +1,30 @@
+/* ════════════════════════════════════════════════════════════════════
+   Joke book — "comedy-club" theme: warm spotlight amber + teal neon,
+   light & dark. Energy lives in the chrome (brand, headers, joke cards,
+   set timer); the reading/writing surface stays calm and legible.
+   ════════════════════════════════════════════════════════════════════ */
 :root {
-  --bg: #ffffff;
-  --bg-alt: #f7f8fa;
-  --bg-hover: #eef0f4;
-  --border: #e6e8ec;
-  --text: #1d1f23;
-  --text-dim: #6b7280;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #eef0ff;
+  --bg: #fffdfa;
+  --bg-alt: #faf2e7;
+  --bg-hover: #f1e4d2;
+  --border: #ece0cd;
+  --text: #2a2018;
+  --text-dim: #8c7a63;
+  --accent: #e8590c;
+  --accent-hover: #c2410c;
+  --accent-soft: #fce7d0;
   --tag: #0e7490;
   --danger: #dc2626;
-  --joke-bg: #fff7ed;
+  --joke-bg: #fff5e6;
   --joke-border: #f59e0b;
   --star: #f59e0b;
-  --star-off: #d4d4d8;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
-  --shadow-lg: 0 10px 30px rgba(16, 24, 40, 0.18);
+  --star-off: #e0d2bb;
+  --shadow:
+    0 1px 2px rgba(120, 72, 20, 0.08),
+    0 2px 8px rgba(120, 72, 20, 0.09);
+  --shadow-lg: 0 16px 40px rgba(90, 50, 10, 0.22);
+  --radius: 12px;
+  --radius-sm: 9px;
   font-family:
     system-ui,
     -apple-system,
@@ -25,23 +34,23 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #18191c;
-    --bg-alt: #202226;
-    --bg-hover: #2b2d33;
-    --border: #313338;
-    --text: #e8eaed;
-    --text-dim: #9aa0a6;
-    --accent: #818cf8;
-    --accent-hover: #a5b0ff;
-    --accent-soft: #2a2952;
+    --bg: #15120e;
+    --bg-alt: #1e1914;
+    --bg-hover: #2a2219;
+    --border: #34291e;
+    --text: #f2e8db;
+    --text-dim: #ad9a82;
+    --accent: #fb923c;
+    --accent-hover: #fdba74;
+    --accent-soft: #3a2510;
     --tag: #22d3ee;
     --danger: #f87171;
-    --joke-bg: #2c2410;
-    --joke-border: #b8860b;
+    --joke-bg: #271d0f;
+    --joke-border: #d99412;
     --star: #fbbf24;
-    --star-off: #52525b;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 12px 34px rgba(0, 0, 0, 0.5);
+    --star-off: #574833;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -68,6 +77,37 @@ button {
   cursor: pointer;
 }
 
+/* Icons inherit colour and centre cleanly inside any control. */
+svg {
+  display: block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(14px);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
 /* ── App shell ───────────────────────────────────────────────────── */
 .app {
   display: flex;
@@ -77,15 +117,13 @@ button {
   margin: 0 auto;
 }
 
-/* Desktop: sidebar + content. */
 .app.wide {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 304px minmax(0, 1fr);
   max-width: none;
   height: 100dvh;
 }
 
-/* Mobile with the menu pinned: a compact two-pane layout. */
 .app.pinned {
   display: grid;
   grid-template-columns: minmax(7rem, 42%) minmax(0, 1fr);
@@ -115,7 +153,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 0.4rem;
-  padding: 0.7rem 0.7rem;
+  padding: 0.7rem;
   padding-top: max(0.7rem, env(safe-area-inset-top));
   border-bottom: 1px solid var(--border);
 }
@@ -123,30 +161,38 @@ button {
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-weight: 700;
-  font-size: 1rem;
+  gap: 0.5rem;
+  font-weight: 800;
+  font-size: 1.02rem;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
+/* Spotlight badge holding the 🎤 brand mark. */
 .brand-mark {
-  font-size: 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9px;
+  font-size: 0.95rem;
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  box-shadow: 0 2px 9px rgba(234, 88, 12, 0.4);
 }
 
 .sb-actions {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.28rem;
 }
 
 .sb-head .icon {
   min-width: 2.05rem;
   height: 2.05rem;
-  font-size: 0.95rem;
 }
 
 .sb-user {
-  padding: 0.45rem 0.8rem;
+  padding: 0.45rem 0.85rem;
   font-size: 0.78rem;
   color: var(--text-dim);
   white-space: nowrap;
@@ -180,37 +226,45 @@ button {
 
 .bar-title {
   flex: 1;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.98rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* ── Icon buttons ────────────────────────────────────────────────── */
 .icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
   background: var(--bg);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   min-width: 2.3rem;
   height: 2.3rem;
-  font-size: 1.02rem;
+  color: var(--text-dim);
   line-height: 1;
   transition:
-    background 0.12s,
-    border-color 0.12s,
+    background 0.14s,
+    border-color 0.14s,
+    color 0.14s,
     transform 0.06s;
+}
+
+.icon svg {
+  width: 1.2em;
+  height: 1.2em;
 }
 
 .icon:hover {
   background: var(--bg-hover);
   border-color: var(--text-dim);
+  color: var(--text);
 }
 
 .icon:active {
-  transform: scale(0.94);
+  transform: scale(0.93);
 }
 
 .icon.active {
@@ -219,31 +273,44 @@ button {
   color: var(--accent);
 }
 
-.icon.danger {
+.icon.danger:hover {
   color: var(--danger);
+  border-color: var(--danger);
 }
 
 .icon:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: default;
 }
 
+.icon.spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Save status pill ────────────────────────────────────────────── */
 .status {
-  font-size: 0.7rem;
-  color: var(--text-dim);
+  font-size: 0.64rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .status.saving {
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
 .status.unsaved {
+  background: rgba(220, 38, 38, 0.13);
   color: var(--danger);
 }
 
-/* ── Search & list ───────────────────────────────────────────────── */
+/* ── Search & flat list ──────────────────────────────────────────── */
 .search {
   margin: 0.6rem;
   padding: 0.55rem 0.75rem;
@@ -253,8 +320,8 @@ button {
   color: var(--text);
   font-size: 0.95rem;
   transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
+    border-color 0.14s,
+    box-shadow 0.14s;
 }
 
 .search:focus {
@@ -276,7 +343,7 @@ button {
   align-items: center;
   gap: 0.4rem;
   padding: 0.55rem 0.6rem;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   transition: background 0.12s;
 }
 
@@ -297,7 +364,7 @@ button {
 }
 
 .list-name {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .list-path {
@@ -331,7 +398,7 @@ button {
   align-items: center;
   gap: 0.3rem;
   padding: 0.45rem 0.5rem;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   overflow: hidden;
   transition: background 0.12s;
@@ -344,7 +411,7 @@ button {
 .tree-row.active {
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .tree-row.folder .label {
@@ -352,9 +419,16 @@ button {
 }
 
 .tree-row .twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1rem;
   color: var(--text-dim);
-  font-size: 0.7rem;
+}
+
+.tree-row .twisty svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
 .tree-row .label {
@@ -367,33 +441,40 @@ button {
   cursor: grab;
 }
 
-/* Per-row "move to folder" button: reveal on hover (desktop), always shown
-   on touch devices where drag-and-drop is unreliable. */
+/* Per-row rename/move buttons: reveal on hover (desktop), always on touch. */
 .row-move {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
-  padding: 0.15rem 0.3rem;
+  color: var(--text-dim);
+  padding: 0.2rem 0.28rem;
   border-radius: 7px;
-  font-size: 0.95rem;
   line-height: 1;
   opacity: 0;
   transition:
     opacity 0.12s,
-    background 0.12s;
+    background 0.12s,
+    color 0.12s;
+}
+
+.row-move svg {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .row-move:hover {
   background: var(--bg-hover);
+  color: var(--text);
 }
 
-/* Desktop layout: reveal on row hover. */
 .app.wide .tree-row:hover .row-move,
 .app.wide .list-row:hover .row-move {
-  opacity: 0.75;
+  opacity: 0.8;
 }
 
-/* Mobile layout has no hover, so always show it. */
 .app:not(.wide) .row-move {
   opacity: 0.7;
 }
@@ -405,11 +486,11 @@ button {
   outline-offset: -1px;
 }
 
-/* ── Move-to-folder sheet ────────────────────────────────────────── */
+/* ── Bottom sheet (move / copy pickers) ──────────────────────────── */
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(20, 10, 0, 0.45);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -421,21 +502,18 @@ button {
   width: 100%;
   max-width: 440px;
   max-height: 70vh;
-  border-radius: 16px 16px 0 0;
+  margin: 0 auto;
+  border-radius: 18px 18px 0 0;
   overflow-y: auto;
   padding-bottom: env(safe-area-inset-bottom);
   box-shadow: var(--shadow-lg);
-}
-
-.app.wide ~ .sheet-backdrop .sheet,
-.sheet {
-  margin: 0 auto;
+  animation: sheet-in 0.18s ease;
 }
 
 .sheet-head {
-  padding: 0.95rem 1.1rem 0.5rem;
-  font-weight: 600;
-  color: var(--text-dim);
+  padding: 0.95rem 1.1rem 0.55rem;
+  font-weight: 700;
+  color: var(--text);
   position: sticky;
   top: 0;
   background: var(--bg);
@@ -448,16 +526,26 @@ button {
 }
 
 .sheet-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   padding: 0.8rem 1.1rem;
   border-top: 1px solid var(--border);
   transition: background 0.12s;
+}
+
+.sheet-list li svg {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--text-dim);
 }
 
 .sheet-list li:hover {
   background: var(--bg-hover);
 }
 
-/* ── Tags ────────────────────────────────────────────────────────── */
+/* ── Tags (teal neon) ────────────────────────────────────────────── */
 .tag-chip {
   border: 1px solid var(--tag);
   color: var(--tag);
@@ -465,11 +553,18 @@ button {
   border-radius: 999px;
   padding: 0.15rem 0.65rem;
   font-size: 0.78rem;
-  transition: background 0.12s;
+  font-weight: 600;
+  transition:
+    background 0.12s,
+    transform 0.06s;
 }
 
 .tag-chip:hover {
   background: var(--bg-hover);
+}
+
+.tag-chip:active {
+  transform: scale(0.96);
 }
 
 .tagrow {
@@ -491,7 +586,7 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
-  padding: 0.7rem 0.8rem;
+  padding: 0.8rem;
   overflow-y: auto;
 }
 
@@ -513,7 +608,7 @@ button {
   line-height: 1.25rem;
 }
 
-/* ── Note body ───────────────────────────────────────────────────── */
+/* ── Note body / editor ──────────────────────────────────────────── */
 .note-body {
   flex: 1;
   overflow-y: auto;
@@ -530,26 +625,27 @@ button {
 .editor-toolbar {
   display: flex;
   gap: 0.4rem;
-  padding: 0.45rem 0.6rem;
+  padding: 0.5rem 0.7rem;
   border-bottom: 1px solid var(--border);
   background: var(--bg-alt);
 }
 
 .joke-btn {
-  border: 1px solid var(--joke-border);
-  background: var(--joke-bg);
-  color: var(--text);
+  border: none;
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  color: #fff;
   border-radius: 999px;
-  padding: 0.35rem 0.8rem;
+  padding: 0.4rem 0.9rem;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
   transition:
     filter 0.12s,
     transform 0.06s;
 }
 
 .joke-btn:hover {
-  filter: brightness(1.05);
+  filter: brightness(1.06);
 }
 
 .joke-btn:active {
@@ -575,257 +671,12 @@ button {
   outline: none;
 }
 
-/* ── Joke block (in preview) ─────────────────────────────────────── */
-.joke {
-  margin: 0.9rem 0;
-  width: 100%;
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--joke-border);
-  border-radius: 10px;
-  background: var(--joke-bg);
-  padding: 0.5rem 0.9rem 0.7rem;
-}
-
-.joke-rail {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.3rem;
-}
-
-.joke-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--joke-border);
-}
-
-.joke-move {
-  display: flex;
-  gap: 0.15rem;
-}
-
-.joke-arrow {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  border-radius: 7px;
-  width: 1.7rem;
-  height: 1.7rem;
-  font-size: 0.9rem;
-  line-height: 1;
-  transition:
-    background 0.12s,
-    border-color 0.12s,
-    transform 0.06s;
-}
-
-.joke-arrow:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--text-dim);
-}
-
-.joke-arrow:active:not(:disabled) {
-  transform: scale(0.9);
-}
-
-.joke-arrow:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.joke-stars {
-  display: flex;
-  gap: 0.05rem;
-}
-
-.star {
-  border: none;
-  background: transparent;
-  padding: 0.1rem 0.12rem;
-  font-size: 1.15rem;
-  line-height: 1;
-  color: var(--star-off);
-  transition:
-    transform 0.08s,
-    color 0.12s;
-}
-
-.star.on {
-  color: var(--star);
-}
-
-.star:hover {
-  transform: scale(1.18);
-}
-
-.joke-body > :first-child {
-  margin-top: 0;
-}
-
-.joke-body > :last-child {
-  margin-bottom: 0;
-}
-
-/* ── Joke versions ───────────────────────────────────────────────── */
-.joke-version.multi {
-  border: 1px dashed var(--joke-border);
-  border-radius: 8px;
-  padding: 0.4rem 0.6rem 0.5rem;
-  margin-bottom: 0.45rem;
-  background: rgba(245, 158, 11, 0.06);
-}
-
-.joke-version-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.15rem;
-}
-
-.joke-version-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--joke-border);
-  border: 1px solid var(--joke-border);
-  border-radius: 5px;
-  padding: 0.05rem 0.35rem;
-}
-
-.joke-version-del {
-  margin-left: auto;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  line-height: 1;
-  padding: 0.15rem 0.3rem;
-  border-radius: 5px;
-  transition:
-    color 0.12s,
-    background 0.12s;
-}
-
-.joke-version-del:hover {
-  color: var(--danger);
-  background: var(--bg-hover);
-}
-
-.joke-empty {
-  color: var(--text-dim);
-  font-style: italic;
-  font-size: 0.88rem;
-}
-
-.joke-add-version {
-  margin-top: 0.3rem;
-  border: 1px dashed var(--joke-border);
-  background: transparent;
-  color: var(--joke-border);
-  border-radius: 7px;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition:
-    background 0.12s,
-    transform 0.06s;
-}
-
-.joke-add-version:hover {
-  background: var(--bg-hover);
-}
-
-.joke-add-version:active {
-  transform: scale(0.97);
-}
-
-/* ── Joke selection (copy to another note) ───────────────────────── */
-.joke.picked {
-  border-left-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.joke-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  cursor: pointer;
-}
-
-.joke-pick input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.joke-pickbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  padding: 0.5rem 0.9rem;
-  border-top: 1px solid var(--accent);
-  background: var(--accent-soft);
-}
-
-.joke-pickbar-count {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--text);
-}
-
-.joke-pickbar-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.joke-pickbar-clear,
-.joke-pickbar-send {
-  border-radius: 8px;
-  padding: 0.35rem 0.8rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  transition:
-    filter 0.12s,
-    background 0.12s,
-    transform 0.06s;
-}
-
-.joke-pickbar-clear {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-dim);
-}
-
-.joke-pickbar-clear:hover {
-  background: var(--bg-hover);
-}
-
-.joke-pickbar-send {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-}
-
-.joke-pickbar-send:hover {
-  background: var(--accent-hover);
-}
-
-.joke-pickbar-send:active,
-.joke-pickbar-clear:active {
-  transform: scale(0.97);
-}
-
+/* ── Reading surface ─────────────────────────────────────────────── */
 .preview {
-  padding: 1rem 1.2rem 2rem;
+  padding: 1.1rem 1.3rem 2rem;
   line-height: 1.7;
   word-wrap: break-word;
-  max-width: 820px;
+  max-width: 800px;
   width: 100%;
 }
 
@@ -833,7 +684,7 @@ button {
 .preview h2,
 .preview h3 {
   line-height: 1.25;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 .preview h1 {
@@ -842,11 +693,12 @@ button {
 
 .preview a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .preview a:hover {
-  text-decoration: underline;
+  color: var(--accent-hover);
 }
 
 .preview pre {
@@ -872,7 +724,7 @@ button {
 .preview blockquote {
   margin: 0.8rem 0;
   padding: 0.2rem 0 0.2rem 1rem;
-  border-left: 3px solid var(--border);
+  border-left: 3px solid var(--joke-border);
   color: var(--text-dim);
 }
 
@@ -887,75 +739,328 @@ button {
   margin: 1.4rem 0;
 }
 
-/* ── Welcome (desktop empty state) ───────────────────────────────── */
-.welcome {
+/* ── Joke card (the signature element) ───────────────────────────── */
+.joke {
+  position: relative;
+  margin: 1rem 0;
+  width: 100%;
+  border: 1px solid var(--joke-border);
+  border-left: 4px solid var(--joke-border);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(245, 158, 11, 0.14), transparent 60%),
+    var(--joke-bg);
+  padding: 0.6rem 0.95rem 0.8rem;
+  box-shadow: var(--shadow);
+}
+
+.joke.rated {
+  box-shadow:
+    0 0 0 1px rgba(245, 158, 11, 0.25),
+    var(--shadow);
+}
+
+.joke-rail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.joke-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--joke-border);
+}
+
+.joke-move {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.joke-arrow {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-}
-
-.welcome-inner {
-  max-width: 340px;
-  padding: 1.5rem;
-}
-
-.welcome-mark {
-  font-size: 3rem;
-}
-
-.welcome h2 {
-  margin: 0.6rem 0 0.4rem;
-  font-size: 1.4rem;
-  letter-spacing: -0.01em;
-}
-
-.welcome p {
-  margin: 0 0 1.3rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
   color: var(--text-dim);
+  border-radius: 7px;
+  width: 1.75rem;
+  height: 1.75rem;
+  line-height: 1;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s,
+    transform 0.06s;
 }
 
-.welcome-btn {
+.joke-arrow svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.joke-arrow:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+
+.joke-arrow:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.joke-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.joke-stars {
+  display: flex;
+  gap: 0.05rem;
+}
+
+.star {
   border: none;
-  background: var(--accent);
-  color: #fff;
-  padding: 0.65rem 1.3rem;
+  background: transparent;
+  padding: 0.1rem 0.12rem;
+  font-size: 1.18rem;
+  line-height: 1;
+  color: var(--star-off);
+  transition:
+    transform 0.08s,
+    color 0.12s;
+}
+
+.star.on {
+  color: var(--star);
+  text-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
+}
+
+.star:hover {
+  transform: scale(1.2);
+}
+
+.joke-body > :first-child {
+  margin-top: 0;
+}
+
+.joke-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Joke versions ───────────────────────────────────────────────── */
+.joke-version.multi {
+  border: 1px dashed var(--joke-border);
   border-radius: 10px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  box-shadow: var(--shadow);
+  padding: 0.45rem 0.65rem 0.55rem;
+  margin-bottom: 0.5rem;
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.joke-version-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.joke-version-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--joke-border);
+  border: 1px solid var(--joke-border);
+  border-radius: 6px;
+  padding: 0.08rem 0.4rem;
+}
+
+.joke-version-del {
+  display: inline-flex;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+  border-radius: 6px;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+
+.joke-version-del svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.joke-version-del:hover {
+  color: var(--danger);
+  background: var(--bg-hover);
+}
+
+.joke-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 0.88rem;
+}
+
+.joke-add-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  border: 1px dashed var(--joke-border);
+  background: transparent;
+  color: var(--joke-border);
+  border-radius: 8px;
+  padding: 0.32rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
   transition:
     background 0.12s,
     transform 0.06s;
 }
 
-.welcome-btn:hover {
-  background: var(--accent-hover);
+.joke-add-version svg {
+  width: 1em;
+  height: 1em;
 }
 
-.welcome-btn:active {
+.joke-add-version:hover {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.joke-add-version:active {
   transform: scale(0.97);
 }
 
-/* ── Joke stats (end-of-note summary) ────────────────────────────── */
-.joke-stats {
+/* ── Joke selection / copy-to-note ───────────────────────────────── */
+.joke.picked {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  box-shadow:
+    0 0 0 2px var(--accent-soft),
+    var(--shadow);
+}
+
+.joke-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+
+.joke-pick input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.joke-pickbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
   flex-wrap: wrap;
-  padding: 0.5rem 0.9rem;
-  border-top: 1px solid var(--joke-border);
-  background: var(--joke-bg);
+  padding: 0.55rem 0.95rem;
+  border-top: 1px solid var(--accent);
+  background: var(--accent-soft);
+  animation: rise 0.16s ease;
+}
+
+.joke-pickbar-count {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.joke-pickbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.joke-pickbar-clear,
+.joke-pickbar-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 9px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  transition:
+    filter 0.12s,
+    background 0.12s,
+    transform 0.06s;
+}
+
+.joke-pickbar-send svg {
+  width: 1em;
+  height: 1em;
+}
+
+.joke-pickbar-clear {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+}
+
+.joke-pickbar-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.joke-pickbar-send {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.joke-pickbar-send:hover {
+  background: var(--accent-hover);
+}
+
+.joke-pickbar-send:active,
+.joke-pickbar-clear:active {
+  transform: scale(0.97);
+}
+
+/* ── Set summary (the "stage timer" marquee) ─────────────────────── */
+.joke-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.95rem;
+  border-top: 2px solid var(--joke-border);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(245, 158, 11, 0.08) 0,
+      rgba(245, 158, 11, 0.08) 10px,
+      transparent 10px,
+      transparent 20px
+    ),
+    var(--joke-bg);
   font-size: 0.82rem;
 }
 
 .joke-stats-count {
-  font-weight: 700;
+  font-weight: 800;
   color: var(--joke-border);
 }
 
 .joke-stats-time {
-  font-weight: 600;
+  margin-left: auto;
+  font-weight: 800;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   cursor: help;
 }
@@ -968,7 +1073,7 @@ button {
 }
 
 .joke-stats-avg .star {
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   padding: 0;
 }
 
@@ -980,14 +1085,14 @@ button {
 .backlinks {
   border-top: 1px solid var(--border);
   background: var(--bg-alt);
-  padding: 0.6rem 0.9rem;
+  padding: 0.6rem 0.95rem;
   max-height: 28vh;
   overflow-y: auto;
 }
 
 .backlinks-head {
   font-size: 0.74rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1006,7 +1111,7 @@ button {
 }
 
 .backlinks li {
-  padding: 0.4rem 0.2rem;
+  padding: 0.4rem 0.3rem;
   color: var(--accent);
   border-radius: 7px;
   transition: background 0.12s;
@@ -1016,7 +1121,75 @@ button {
   background: var(--bg-hover);
 }
 
-/* ── Login ───────────────────────────────────────────────────────── */
+/* ── Welcome (empty state) ───────────────────────────────────────── */
+.welcome {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background:
+    radial-gradient(80% 50% at 50% 0%, var(--accent-soft), transparent 70%),
+    var(--bg);
+}
+
+.welcome-inner {
+  max-width: 360px;
+  padding: 1.5rem;
+}
+
+.welcome-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 18px;
+  font-size: 2rem;
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  box-shadow: 0 8px 24px rgba(234, 88, 12, 0.4);
+}
+
+.welcome h2 {
+  margin: 1rem 0 0.4rem;
+  font-size: 1.4rem;
+  letter-spacing: -0.015em;
+}
+
+.welcome p {
+  margin: 0 0 1.3rem;
+  color: var(--text-dim);
+}
+
+.welcome-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.65rem 1.3rem;
+  border-radius: 11px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.32);
+  transition:
+    background 0.12s,
+    transform 0.06s;
+}
+
+.welcome-btn svg {
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.welcome-btn:hover {
+  background: var(--accent-hover);
+}
+
+.welcome-btn:active {
+  transform: scale(0.97);
+}
+
+/* ── Login (the "marquee poster") ────────────────────────────────── */
 .login {
   max-width: 380px;
   margin: 0 auto;
@@ -1026,19 +1199,32 @@ button {
   flex-direction: column;
   justify-content: center;
   gap: 0.7rem;
+  background:
+    radial-gradient(70% 40% at 50% 8%, var(--accent-soft), transparent 70%),
+    var(--bg);
 }
 
 .login h1 {
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 1.9rem;
+  gap: 0.6rem;
+  font-size: 1.95rem;
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .login h1::before {
-  content: '📓';
+  content: '🎤';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 12px;
+  font-size: 1.3rem;
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.4);
 }
 
 .login .hint {
@@ -1051,7 +1237,7 @@ button {
   flex-direction: column;
   gap: 0.3rem;
   font-size: 0.82rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-dim);
 }
 
@@ -1063,8 +1249,8 @@ button {
   color: var(--text);
   font-size: 1rem;
   transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
+    border-color 0.14s,
+    box-shadow 0.14s;
 }
 
 .login input:focus {
@@ -1085,7 +1271,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
-  font-weight: 600;
+  font-weight: 700;
   transition:
     background 0.12s,
     transform 0.06s;
@@ -1103,6 +1289,7 @@ button {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.3);
 }
 
 .login-actions .primary:hover {
@@ -1126,16 +1313,25 @@ button {
   bottom: calc(1.1rem + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   max-width: 90%;
-  background: var(--danger);
-  color: #fff;
-  padding: 0.65rem 0.95rem;
-  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  padding: 0.7rem 1rem;
+  border-radius: 11px;
   font-size: 0.85rem;
+  font-weight: 600;
   box-shadow: var(--shadow-lg);
   cursor: pointer;
+  animation: rise 0.18s ease;
 }
 
 .toast .dismiss {
   margin-left: 0.4rem;
-  opacity: 0.8;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

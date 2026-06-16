@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { IconChevronDown, IconChevronRight, IconMove, IconRename } from './icons'
 
 // Drag payload types, so drop zones can tell a note drag from a folder drag.
 const NOTE_MIME = 'application/x-note-id'
@@ -204,7 +205,7 @@ function TreeItem(props: TreeItemProps) {
           }}
           onDrop={(e) => handleDrop(e, node.path)}
         >
-          <span className="twisty">{open ? '▾' : '▸'}</span>
+          <span className="twisty">{open ? <IconChevronDown /> : <IconChevronRight />}</span>
           <span className="label">{node.name}</span>
           <button
             className="row-move"
@@ -214,7 +215,7 @@ function TreeItem(props: TreeItemProps) {
               onRenameFolder(node.path)
             }}
           >
-            ✏️
+            <IconRename />
           </button>
           <button
             className="row-move"
@@ -224,7 +225,7 @@ function TreeItem(props: TreeItemProps) {
               onMoveFolderRequest(node.path)
             }}
           >
-            📂
+            <IconMove />
           </button>
         </div>
         {open && (
@@ -259,7 +260,7 @@ function TreeItem(props: TreeItemProps) {
             if (node.id) onRenameFile(node.id)
           }}
         >
-          ✏️
+          <IconRename />
         </button>
         <button
           className="row-move"
@@ -269,7 +270,7 @@ function TreeItem(props: TreeItemProps) {
             if (node.id) onMoveRequest(node.id)
           }}
         >
-          📂
+          <IconMove />
         </button>
       </div>
     </li>
