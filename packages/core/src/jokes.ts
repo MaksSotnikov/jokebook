@@ -78,6 +78,8 @@ export interface JokeSegment {
   /** 0-based index among joke blocks; used to target rating/version updates. */
   index: number
   versions: JokeVersion[]
+  /** The raw `:::joke … :::` block text, verbatim — used to copy the joke. */
+  source: string
 }
 export type Segment = TextSegment | JokeSegment
 
@@ -91,7 +93,12 @@ export function parseJokes(text: string): Segment[] {
   for (const jk of jokes) {
     if (jk.open > cursor)
       segs.push({ type: 'text', value: lines.slice(cursor, jk.open).join('\n') })
-    segs.push({ type: 'joke', index: index++, versions: jk.versions })
+    segs.push({
+      type: 'joke',
+      index: index++,
+      versions: jk.versions,
+      source: lines.slice(jk.open, jk.close + 1).join('\n'),
+    })
     cursor = jk.close + 1
   }
   if (cursor < lines.length) segs.push({ type: 'text', value: lines.slice(cursor).join('\n') })
@@ -179,6 +186,16 @@ export function wrapJoke(before: string, selection: string, after: string): stri
   const lead = before && !before.endsWith('\n') ? '\n' : ''
   const trail = after && !after.startsWith('\n') ? '\n' : ''
   return `${before}${lead}${block}${trail}${after}`
+}
+
+/** Append joke `blocks` to the end of `target` note content, separated by a
+ * blank line, normalising trailing whitespace so the fences stay well-formed.
+ * Returns `target` unchanged when there are no blocks. */
+export function appendJokes(target: string, blocks: string[]): string {
+  if (blocks.length === 0) return target
+  const added = blocks.join('\n\n')
+  const base = target.replace(/\s+$/, '')
+  return base ? `${base}\n\n${added}\n` : `${added}\n`
 }
 
 /** Count whitespace-delimited words in a chunk of text. */

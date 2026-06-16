@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addJokeVersion,
+  appendJokes,
   jokeSetSeconds,
   moveJoke,
   parseJokes,
@@ -20,7 +21,12 @@ describe('parseJokes', () => {
     const segs = parseJokes('intro\n:::joke 3\nthe bit\n:::\noutro')
     expect(segs).toEqual([
       { type: 'text', value: 'intro' },
-      { type: 'joke', index: 0, versions: [{ stars: 3, body: 'the bit' }] },
+      {
+        type: 'joke',
+        index: 0,
+        versions: [{ stars: 3, body: 'the bit' }],
+        source: ':::joke 3\nthe bit\n:::',
+      },
       { type: 'text', value: 'outro' },
     ])
   })
@@ -40,6 +46,11 @@ describe('parseJokes', () => {
 
   it('keeps multi-line bodies intact', () => {
     expect(jokeSegs(':::joke 1\nline a\nline b\n:::')[0].versions[0].body).toBe('line a\nline b')
+  })
+
+  it('exposes the verbatim block source for copying', () => {
+    const src = ':::joke 2\nfirst\n:::alt 5\nsecond\n:::'
+    expect(jokeSegs(`lead\n${src}\ntail`)[0].source).toBe(src)
   })
 
   it('ignores an unclosed block', () => {
@@ -125,6 +136,24 @@ describe('moveJoke', () => {
 describe('wrapJoke', () => {
   it('wraps a selection as a fresh unrated joke', () => {
     expect(wrapJoke('a\n', 'punch', '\nb')).toBe('a\n:::joke 0\npunch\n:::\nb')
+  })
+})
+
+describe('appendJokes', () => {
+  it('appends blocks after existing content with a blank-line gap', () => {
+    expect(appendJokes('notes here', [':::joke 3\na\n:::'])).toBe(
+      'notes here\n\n:::joke 3\na\n:::\n',
+    )
+  })
+
+  it('joins multiple blocks and tolerates empty/whitespace targets', () => {
+    expect(appendJokes('  \n', [':::joke 0\na\n:::', ':::joke 5\nb\n:::'])).toBe(
+      ':::joke 0\na\n:::\n\n:::joke 5\nb\n:::\n',
+    )
+  })
+
+  it('is a no-op with no blocks', () => {
+    expect(appendJokes('x', [])).toBe('x')
   })
 })
 

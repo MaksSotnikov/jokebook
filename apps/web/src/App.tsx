@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import {
   addJokeVersion,
+  appendJokes,
   buildLinkGraph,
   jokeSetSeconds,
   moveJoke,
@@ -223,6 +224,10 @@ function Workspace({
   const [movingId, setMovingId] = useState<string | null>(null)
   // Folder path whose folder-picker sheet is open (same sheet, folder move).
   const [movingFolder, setMovingFolder] = useState<string | null>(null)
+  // Joke indices (in the open note) ticked for copying to another note.
+  const [pickedJokes, setPickedJokes] = useState<Set<number>>(() => new Set())
+  // True while the "send jokes to another note" target picker is open.
+  const [sendingJokes, setSendingJokes] = useState(false)
 
   const cursorRef = useRef(0)
   const saveTimer = useRef<number | null>(null)
@@ -359,7 +364,8 @@ function Workspace({
     saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DEBOUNCE_MS)
   }
 
-  /** Wrap the current editor selection as a joke block, then show the preview. */
+  /** Wrap the current editor selection as a joke block. Stays in edit mode so
+   * the user can keep marking jokes; preview is only shown when they ask. */
   function markJoke() {
     const ta = editorRef.current
     if (!ta || !current) return
@@ -372,7 +378,13 @@ function Workspace({
     }
     const next = wrapJoke(draft.slice(0, start), draft.slice(start, end), draft.slice(end))
     onEdit(next)
-    setMode('preview')
+    // Keep the editor focused with the caret just past the new block, ready for
+    // the next selection.
+    const caret = next.length - (draft.length - end)
+    requestAnimationFrame(() => {
+      ta.focus()
+      ta.setSelectionRange(caret, caret)
+    })
   }
 
   /** Rate version `vi` of the `index`-th joke in the current note. */
@@ -402,6 +414,50 @@ function Workspace({
   /** Swap the `index`-th joke with its neighbour (`-1` up, `+1` down). */
   function reorderJoke(index: number, dir: -1 | 1) {
     onEdit(moveJoke(draft, index, dir))
+  }
+
+  /** Tick / untick the `index`-th joke for copying to another note. */
+  function toggleJokePick(index: number) {
+    setPickedJokes((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  /** Copy (not move) the ticked jokes into note `targetId`, appending their
+   * verbatim blocks — ratings, versions and all. */
+  async function sendPickedJokes(targetId: string) {
+    setSendingJokes(false)
+    const target = noteItems.find((n) => n.id === targetId)
+    if (!target) return
+    const jokeSegs = segments.filter((s): s is JokeSegment => s.type === 'joke')
+    const blocks = [...pickedJokes]
+      .sort((a, b) => a - b)
+      .map((i) => jokeSegs[i]?.source)
+      .filter((s): s is string => Boolean(s))
+    if (blocks.length === 0) return
+    await saveNow()
+    try {
+      const { results } = await push(serverUrl, token, [
+        {
+          id: target.id,
+          path: target.path,
+          content: appendJokes(target.content, blocks),
+          updatedAt: Date.now(),
+          deleted: false,
+          baseVersion: target.version,
+        },
+      ])
+      applyResults(results)
+      setPickedJokes(new Set())
+      setError(
+        `Copied ${blocks.length} joke${blocks.length > 1 ? 's' : ''} to ${noteName(target.path)}.`,
+      )
+    } catch (e) {
+      handleError(e)
+    }
   }
 
   /** Import one or more Obsidian `.md` files as notes, preserving any folder
@@ -778,6 +834,13 @@ function Workspace({
     return { count: jokes.length, rated: rated.length, avg, seconds: jokeSetSeconds(jokes) }
   }, [segments])
 
+  // Drop any joke selection when the note or mode changes — joke indices only
+  // stay valid within a single note's current preview.
+  useEffect(() => {
+    setPickedJokes(new Set())
+    setSendingJokes(false)
+  }, [selectedId, mode])
+
   const sidebar = (
     <aside className="sidebar">
       <header className="sb-head">
@@ -1012,6 +1075,8 @@ function Workspace({
                   key={i}
                   versions={seg.versions}
                   render={renderMd}
+                  picked={pickedJokes.has(seg.index)}
+                  onTogglePick={() => toggleJokePick(seg.index)}
                   onRate={(vi, n) => rateVersion(seg.index, vi, n)}
                   onAddVersion={() => addVersion(seg.index)}
                   onRemoveVersion={(vi) => removeVersion(seg.index, vi)}
@@ -1024,6 +1089,21 @@ function Workspace({
           </div>
         )}
       </div>
+      {mode === 'preview' && pickedJokes.size > 0 && (
+        <div className="joke-pickbar">
+          <span className="joke-pickbar-count">
+            {pickedJokes.size} joke{pickedJokes.size > 1 ? 's' : ''} selected
+          </span>
+          <div className="joke-pickbar-actions">
+            <button className="joke-pickbar-clear" onClick={() => setPickedJokes(new Set())}>
+              Clear
+            </button>
+            <button className="joke-pickbar-send" onClick={() => setSendingJokes(true)}>
+              📤 Copy to note…
+            </button>
+          </div>
+        </div>
+      )}
       {jokeStats.count > 0 && (
         <div className="joke-stats">
           <span className="joke-stats-count">
@@ -1104,6 +1184,15 @@ function Workspace({
         />
       )}
 
+      {sendingJokes && current && (
+        <SendJokesSheet
+          count={pickedJokes.size}
+          notes={sorted.filter((n) => n.id !== current.id)}
+          onPick={(id) => void sendPickedJokes(id)}
+          onClose={() => setSendingJokes(false)}
+        />
+      )}
+
       {error && (
         <div className="toast" onClick={() => setError(null)}>
           {error} <span className="dismiss">✕</span>
@@ -1149,6 +1238,42 @@ function MoveSheet({
   )
 }
 
+// ── Send-jokes sheet ──────────────────────────────────────────────────────
+
+/** Note picker for copying the selected jokes into another note. */
+function SendJokesSheet({
+  count,
+  notes,
+  onPick,
+  onClose,
+}: {
+  count: number
+  notes: ApiNote[]
+  onPick: (id: string) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          Copy {count} joke{count > 1 ? 's' : ''} to…
+        </div>
+        {notes.length === 0 ? (
+          <p className="empty">No other notes to copy into.</p>
+        ) : (
+          <ul className="sheet-list">
+            {notes.map((n) => (
+              <li key={n.id} onClick={() => onPick(n.id)}>
+                📝 {n.path}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Joke block ────────────────────────────────────────────────────────────
 
 /** A clickable 5-star rating. Clicking the current top star again clears it. */
@@ -1180,6 +1305,8 @@ function StarRating({ stars, onRate }: { stars: number; onRate: (stars: number) 
 function JokeBlock({
   versions,
   render,
+  picked,
+  onTogglePick,
   onRate,
   onAddVersion,
   onRemoveVersion,
@@ -1189,6 +1316,8 @@ function JokeBlock({
 }: {
   versions: JokeVersion[]
   render: (body: string) => string
+  picked: boolean
+  onTogglePick: () => void
   onRate: (versionIndex: number, stars: number) => void
   onAddVersion: () => void
   onRemoveVersion: (versionIndex: number) => void
@@ -1199,9 +1328,19 @@ function JokeBlock({
   const multi = versions.length > 1
   const rated = versions.some((v) => v.stars > 0)
   return (
-    <div className={`joke${rated ? ' rated' : ''}`}>
+    <div className={`joke${rated ? ' rated' : ''}${picked ? ' picked' : ''}`}>
       <div className="joke-rail">
-        <span className="joke-badge">🎤 Joke{multi ? ` · ${versions.length} versions` : ''}</span>
+        <label className="joke-pick" title="Select to copy to another note">
+          <input
+            type="checkbox"
+            checked={picked}
+            onClick={(e) => e.stopPropagation()}
+            onChange={onTogglePick}
+          />
+          <span className="joke-badge">
+            🎤 Joke{multi ? ` · ${versions.length} versions` : ''}
+          </span>
+        </label>
         <div className="joke-move" role="group" aria-label="Reorder joke">
           <button
             type="button"

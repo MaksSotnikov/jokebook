@@ -30,6 +30,7 @@ export {
   removeJokeVersion,
   moveJoke,
   wrapJoke,
+  appendJokes,
   wordCount,
   performedVersion,
   jokeSetSeconds,

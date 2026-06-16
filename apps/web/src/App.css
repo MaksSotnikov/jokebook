@@ -742,6 +742,85 @@ button {
   transform: scale(0.97);
 }
 
+/* ── Joke selection (copy to another note) ───────────────────────── */
+.joke.picked {
+  border-left-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.joke-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.joke-pick input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.joke-pickbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.joke-pickbar-count {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.joke-pickbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.joke-pickbar-clear,
+.joke-pickbar-send {
+  border-radius: 8px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition:
+    filter 0.12s,
+    background 0.12s,
+    transform 0.06s;
+}
+
+.joke-pickbar-clear {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+}
+
+.joke-pickbar-clear:hover {
+  background: var(--bg-hover);
+}
+
+.joke-pickbar-send {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.joke-pickbar-send:hover {
+  background: var(--accent-hover);
+}
+
+.joke-pickbar-send:active,
+.joke-pickbar-clear:active {
+  transform: scale(0.97);
+}
+
 .preview {
   padding: 1rem 1.2rem 2rem;
   line-height: 1.7;
