@@ -24,6 +24,23 @@ export {
 } from './links.js'
 
 export {
+  parseJokes,
+  setVersionStars,
+  addJokeVersion,
+  removeJokeVersion,
+  moveJoke,
+  wrapJoke,
+  wordCount,
+  performedVersion,
+  jokeSetSeconds,
+  WORDS_PER_MINUTE,
+  type JokeVersion,
+  type JokeSegment,
+  type TextSegment,
+  type Segment,
+} from './jokes.js'
+
+export {
   runSync,
   emptySyncState,
   type ApiNote,

@@ -1,16 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import {
+  addJokeVersion,
   buildLinkGraph,
+  jokeSetSeconds,
+  moveJoke,
   noteName,
+  parseJokes,
   parseTags,
+  performedVersion,
+  removeJokeVersion,
+  setVersionStars,
+  wrapJoke,
   type ApiNote,
+  type JokeSegment,
+  type JokeVersion,
   type PushItem,
   type PushResult,
 } from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
 import { buildTree, Tree } from './Tree'
-import { moveJoke, parseJokes, setJokeStars, wrapJoke, type JokeSegment } from './jokes'
 import {
   decodeTagHref,
   decodeWikiHref,
@@ -47,6 +56,12 @@ function newId(): string {
 /** Render note markdown (with wiki-link and tag transforms) to HTML. */
 function renderMd(text: string): string {
   return marked.parse(wikiLinksToMarkdown(tagsToMarkdown(text))) as string
+}
+
+/** Format a duration in seconds as `M:SS` for the set timer. */
+function fmtTime(seconds: number): string {
+  const total = Math.round(seconds)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
 function loadAuth(): Auth | null {
@@ -200,6 +215,8 @@ function Workspace({
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  // When true the sidebar shows the all-tags browser instead of the note tree.
+  const [showTags, setShowTags] = useState(false)
   const [syncing, setSyncing] = useState(false)
   // Note id whose folder-picker sheet is open (touch-friendly alternative to
   // drag-and-drop); null = closed.
@@ -358,9 +375,28 @@ function Workspace({
     setMode('preview')
   }
 
-  /** Set the `index`-th joke's star rating in the current note. */
-  function rateJoke(index: number, stars: number) {
-    onEdit(setJokeStars(draft, index, stars))
+  /** Rate version `vi` of the `index`-th joke in the current note. */
+  function rateVersion(index: number, vi: number, stars: number) {
+    onEdit(setVersionStars(draft, index, vi, stars))
+  }
+
+  /** Add an empty alternative version to the `index`-th joke and drop into edit
+   * mode with the caret on the blank line, ready to type the new phrasing. */
+  function addVersion(index: number) {
+    const { text, caret } = addJokeVersion(draft, index)
+    onEdit(text)
+    setMode('edit')
+    requestAnimationFrame(() => {
+      const ta = editorRef.current
+      if (!ta) return
+      ta.focus()
+      ta.setSelectionRange(caret, caret)
+    })
+  }
+
+  /** Remove version `vi` from the `index`-th joke (never its last version). */
+  function removeVersion(index: number, vi: number) {
+    onEdit(removeJokeVersion(draft, index, vi))
   }
 
   /** Swap the `index`-th joke with its neighbour (`-1` up, `+1` down). */
@@ -666,6 +702,7 @@ function Workspace({
 
   function activateTag(tag: string) {
     setQuery('')
+    setShowTags(false)
     setTagFilter(tag)
     setSelectedId(null)
   }
@@ -717,16 +754,28 @@ function Workspace({
   )
   const filtering = Boolean(query.trim() || tagFilter)
 
+  // Every distinct tag across the vault with its note count, for the browser.
+  const allTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const n of noteItems)
+      for (const t of parseTags(n.content)) counts.set(t, (counts.get(t) ?? 0) + 1)
+    return [...counts.entries()].sort((a, b) =>
+      a[0].toLowerCase().localeCompare(b[0].toLowerCase()),
+    )
+  }, [noteItems])
+
   // Split the note into text / joke segments so jokes render as rated blocks.
   const segments = useMemo(() => parseJokes(draft), [draft])
   const currentTags = useMemo(() => parseTags(draft), [draft])
 
-  // Joke tally for the end-of-note summary; average over rated jokes only.
+  // Joke tally for the end-of-note summary. Ratings/timing use each joke's
+  // best (performed) version; the average is over jokes with any rating.
   const jokeStats = useMemo(() => {
     const jokes = segments.filter((s): s is JokeSegment => s.type === 'joke')
-    const rated = jokes.filter((j) => j.stars > 0)
-    const avg = rated.length ? rated.reduce((sum, j) => sum + j.stars, 0) / rated.length : null
-    return { count: jokes.length, rated: rated.length, avg }
+    const best = jokes.map((j) => performedVersion(j.versions).stars)
+    const rated = best.filter((s) => s > 0)
+    const avg = rated.length ? rated.reduce((sum, s) => sum + s, 0) / rated.length : null
+    return { count: jokes.length, rated: rated.length, avg, seconds: jokeSetSeconds(jokes) }
   }, [segments])
 
   const sidebar = (
@@ -750,6 +799,17 @@ function Workspace({
           </button>
           <button className="icon" title="New folder" onClick={() => void newFolder()}>
             📁
+          </button>
+          <button
+            className={`icon${showTags ? ' active' : ''}`}
+            title="Browse tags"
+            onClick={() => {
+              setQuery('')
+              setTagFilter(null)
+              setShowTags((s) => !s)
+            }}
+          >
+            🏷
           </button>
           <button
             className="icon"
@@ -795,6 +855,7 @@ function Workspace({
         value={query}
         onChange={(e) => {
           setTagFilter(null)
+          setShowTags(false)
           setQuery(e.currentTarget.value)
         }}
       />
@@ -806,7 +867,20 @@ function Workspace({
           </button>
         </div>
       )}
-      {filtering ? (
+      {showTags ? (
+        allTags.length === 0 ? (
+          <p className="empty">No tags yet. Add #tags inside a note.</p>
+        ) : (
+          <div className="tag-browser">
+            {allTags.map(([tag, count]) => (
+              <button key={tag} className="tag-chip" onClick={() => activateTag(tag)}>
+                #{tag}
+                <span className="tag-count">{count}</span>
+              </button>
+            ))}
+          </div>
+        )
+      ) : filtering ? (
         listed.length === 0 ? (
           <p className="empty">No matching notes.</p>
         ) : (
@@ -936,9 +1010,11 @@ function Workspace({
               ) : (
                 <JokeBlock
                   key={i}
-                  stars={seg.stars}
-                  html={renderMd(seg.body)}
-                  onRate={(n) => rateJoke(seg.index, n)}
+                  versions={seg.versions}
+                  render={renderMd}
+                  onRate={(vi, n) => rateVersion(seg.index, vi, n)}
+                  onAddVersion={() => addVersion(seg.index)}
+                  onRemoveVersion={(vi) => removeVersion(seg.index, vi)}
                   canMoveUp={seg.index > 0}
                   canMoveDown={seg.index < jokeStats.count - 1}
                   onMove={(dir) => reorderJoke(seg.index, dir)}
@@ -952,6 +1028,9 @@ function Workspace({
         <div className="joke-stats">
           <span className="joke-stats-count">
             🎤 {jokeStats.count} joke{jokeStats.count > 1 ? 's' : ''}
+          </span>
+          <span className="joke-stats-time" title="Estimated stage time at 150 words/min (best version of each joke)">
+            ⏱ {fmtTime(jokeStats.seconds)}
           </span>
           <span className="joke-stats-avg">
             {jokeStats.avg !== null ? (
@@ -1072,77 +1151,124 @@ function MoveSheet({
 
 // ── Joke block ────────────────────────────────────────────────────────────
 
-/** A highlighted joke with a clickable 5-star rating and up/down controls to
- * reorder it among the note's jokes. Clicking the current top star again
- * clears the rating. */
+/** A clickable 5-star rating. Clicking the current top star again clears it. */
+function StarRating({ stars, onRate }: { stars: number; onRate: (stars: number) => void }) {
+  return (
+    <div className="joke-stars" role="group" aria-label="Rating">
+      {[1, 2, 3, 4, 5].map((v) => (
+        <button
+          key={v}
+          type="button"
+          className={`star${v <= stars ? ' on' : ''}`}
+          title={`${v} star${v > 1 ? 's' : ''}`}
+          aria-label={`${v} star${v > 1 ? 's' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRate(v === stars ? 0 : v)
+          }}
+        >
+          ★
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A highlighted joke holding one or more alternative versions. Up/down arrows
+ * reorder it among the note's jokes; each version carries its own star rating,
+ * and an alternative can be added (➕) or removed (✕). */
 function JokeBlock({
-  stars,
-  html,
+  versions,
+  render,
   onRate,
+  onAddVersion,
+  onRemoveVersion,
   canMoveUp,
   canMoveDown,
   onMove,
 }: {
-  stars: number
-  html: string
-  onRate: (stars: number) => void
+  versions: JokeVersion[]
+  render: (body: string) => string
+  onRate: (versionIndex: number, stars: number) => void
+  onAddVersion: () => void
+  onRemoveVersion: (versionIndex: number) => void
   canMoveUp: boolean
   canMoveDown: boolean
   onMove: (dir: -1 | 1) => void
 }) {
+  const multi = versions.length > 1
+  const rated = versions.some((v) => v.stars > 0)
   return (
-    <div className={`joke${stars > 0 ? ' rated' : ''}`}>
+    <div className={`joke${rated ? ' rated' : ''}`}>
       <div className="joke-rail">
-        <span className="joke-badge">🎤 Joke</span>
-        <div className="joke-controls">
-          <div className="joke-move" role="group" aria-label="Reorder joke">
-            <button
-              type="button"
-              className="joke-arrow"
-              title="Move up"
-              aria-label="Move joke up"
-              disabled={!canMoveUp}
-              onClick={(e) => {
-                e.stopPropagation()
-                onMove(-1)
-              }}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              className="joke-arrow"
-              title="Move down"
-              aria-label="Move joke down"
-              disabled={!canMoveDown}
-              onClick={(e) => {
-                e.stopPropagation()
-                onMove(1)
-              }}
-            >
-              ↓
-            </button>
-          </div>
-          <div className="joke-stars" role="group" aria-label="Rating">
-            {[1, 2, 3, 4, 5].map((v) => (
-              <button
-                key={v}
-                type="button"
-                className={`star${v <= stars ? ' on' : ''}`}
-                title={`${v} star${v > 1 ? 's' : ''}`}
-                aria-label={`${v} star${v > 1 ? 's' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRate(v === stars ? 0 : v)
-                }}
-              >
-                ★
-              </button>
-            ))}
-          </div>
+        <span className="joke-badge">🎤 Joke{multi ? ` · ${versions.length} versions` : ''}</span>
+        <div className="joke-move" role="group" aria-label="Reorder joke">
+          <button
+            type="button"
+            className="joke-arrow"
+            title="Move up"
+            aria-label="Move joke up"
+            disabled={!canMoveUp}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(-1)
+            }}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="joke-arrow"
+            title="Move down"
+            aria-label="Move joke down"
+            disabled={!canMoveDown}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(1)
+            }}
+          >
+            ↓
+          </button>
         </div>
       </div>
-      <div className="joke-body" dangerouslySetInnerHTML={{ __html: html }} />
+      {versions.map((v, vi) => (
+        <div key={vi} className={`joke-version${multi ? ' multi' : ''}`}>
+          <div className="joke-version-head">
+            {multi && <span className="joke-version-label">V{vi + 1}</span>}
+            <StarRating stars={v.stars} onRate={(n) => onRate(vi, n)} />
+            {multi && (
+              <button
+                type="button"
+                className="joke-version-del"
+                title="Remove this version"
+                aria-label="Remove this version"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemoveVersion(vi)
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {v.body.trim() ? (
+            <div className="joke-body" dangerouslySetInnerHTML={{ __html: render(v.body) }} />
+          ) : (
+            <div className="joke-body joke-empty">Empty version — switch to edit to write it.</div>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        className="joke-add-version"
+        title="Add an alternative version of this joke"
+        onClick={(e) => {
+          e.stopPropagation()
+          onAddVersion()
+        }}
+      >
+        ➕ Add alternative version
+      </button>
     </div>
   )
 }

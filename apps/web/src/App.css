@@ -487,6 +487,32 @@ button {
   margin: 0 0.6rem 0.4rem;
 }
 
+.tag-browser {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.7rem 0.8rem;
+  overflow-y: auto;
+}
+
+.tag-browser .tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tag-count {
+  background: var(--tag);
+  color: var(--bg);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-width: 1.1rem;
+  text-align: center;
+  padding: 0 0.3rem;
+  line-height: 1.25rem;
+}
+
 /* ── Note body ───────────────────────────────────────────────────── */
 .note-body {
   flex: 1;
@@ -565,7 +591,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.3rem;
 }
 
 .joke-badge {
@@ -574,12 +600,6 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--joke-border);
-}
-
-.joke-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .joke-move {
@@ -647,6 +667,79 @@ button {
 
 .joke-body > :last-child {
   margin-bottom: 0;
+}
+
+/* ── Joke versions ───────────────────────────────────────────────── */
+.joke-version.multi {
+  border: 1px dashed var(--joke-border);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem 0.5rem;
+  margin-bottom: 0.45rem;
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.joke-version-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+
+.joke-version-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--joke-border);
+  border: 1px solid var(--joke-border);
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+}
+
+.joke-version-del {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  border-radius: 5px;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+
+.joke-version-del:hover {
+  color: var(--danger);
+  background: var(--bg-hover);
+}
+
+.joke-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 0.88rem;
+}
+
+.joke-add-version {
+  margin-top: 0.3rem;
+  border: 1px dashed var(--joke-border);
+  background: transparent;
+  color: var(--joke-border);
+  border-radius: 7px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition:
+    background 0.12s,
+    transform 0.06s;
+}
+
+.joke-add-version:hover {
+  background: var(--bg-hover);
+}
+
+.joke-add-version:active {
+  transform: scale(0.97);
 }
 
 .preview {
@@ -780,6 +873,12 @@ button {
 .joke-stats-count {
   font-weight: 700;
   color: var(--joke-border);
+}
+
+.joke-stats-time {
+  font-weight: 600;
+  color: var(--text);
+  cursor: help;
 }
 
 .joke-stats-avg {
