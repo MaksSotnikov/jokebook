@@ -1,7 +1,8 @@
 import { useState } from 'react'
 
-// Drag payload type, so folder/root drop zones accept only note drags.
+// Drag payload types, so drop zones can tell a note drag from a folder drag.
 const NOTE_MIME = 'application/x-note-id'
+const FOLDER_MIME = 'application/x-folder-path'
 
 /** A node in the web vault tree: a folder, or a note (carrying its sync id). */
 export interface TreeNode {
@@ -68,27 +69,57 @@ interface TreeProps {
   onSelect: (id: string) => void
   /** Move a note into `toFolder` (`''` = vault root). */
   onMove: (id: string, toFolder: string) => void
+  /** Move a folder into `toParent` (`''` = vault root). */
+  onMoveFolder: (folderPath: string, toParent: string) => void
   /** Open the folder-picker for a note (touch-friendly move; no drag needed). */
   onMoveRequest: (id: string) => void
+  /** Open the folder-picker for a folder (touch-friendly move). */
+  onMoveFolderRequest: (folderPath: string) => void
+  /** Rename a note (prompts for a new name). */
+  onRenameFile: (id: string) => void
+  /** Rename a folder (prompts for a new name). */
+  onRenameFolder: (folderPath: string) => void
 }
 
-/** Renders the vault tree; folders collapse and accept dropped notes. */
-export function Tree({ nodes, activeId, onSelect, onMove, onMoveRequest }: TreeProps) {
+/** Renders the vault tree; folders collapse and accept dropped notes/folders. */
+export function Tree(props: TreeProps) {
+  const { nodes, onMove, onMoveFolder } = props
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  // Path of the folder being dragged, so we can refuse to highlight itself or
+  // its own descendants as drop targets (getData isn't readable on dragover).
+  const [dragFolder, setDragFolder] = useState<string | null>(null)
+
+  /** A folder can't be dropped into itself or any folder beneath it. */
+  function isValidFolderTarget(targetPath: string): boolean {
+    if (dragFolder === null) return true
+    return targetPath !== dragFolder && !targetPath.startsWith(`${dragFolder}/`)
+  }
 
   function handleDrop(e: React.DragEvent, folderPath: string) {
     e.preventDefault()
     e.stopPropagation()
     setDropTarget(null)
-    const id = e.dataTransfer.getData(NOTE_MIME)
-    if (id) onMove(id, folderPath)
+    const noteId = e.dataTransfer.getData(NOTE_MIME)
+    if (noteId) {
+      onMove(noteId, folderPath)
+      return
+    }
+    const src = e.dataTransfer.getData(FOLDER_MIME)
+    if (src && src !== folderPath && !folderPath.startsWith(`${src}/`)) {
+      onMoveFolder(src, folderPath)
+    }
+  }
+
+  /** True if a drag carries something this tree accepts. */
+  function accepts(e: React.DragEvent): boolean {
+    return e.dataTransfer.types.includes(NOTE_MIME) || e.dataTransfer.types.includes(FOLDER_MIME)
   }
 
   return (
     <ul
       className={`tree${dropTarget === '' ? ' drop-target' : ''}`}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(NOTE_MIME)) return
+        if (!accepts(e)) return
         e.preventDefault()
         setDropTarget('')
       }}
@@ -100,51 +131,69 @@ export function Tree({ nodes, activeId, onSelect, onMove, onMoveRequest }: TreeP
           key={node.path}
           node={node}
           depth={0}
-          activeId={activeId}
-          onSelect={onSelect}
-          onMoveRequest={onMoveRequest}
+          {...props}
           dropTarget={dropTarget}
           setDropTarget={setDropTarget}
           handleDrop={handleDrop}
+          accepts={accepts}
+          dragFolder={dragFolder}
+          setDragFolder={setDragFolder}
+          isValidFolderTarget={isValidFolderTarget}
         />
       ))}
     </ul>
   )
 }
 
-interface TreeItemProps {
+interface TreeItemProps extends TreeProps {
   node: TreeNode
   depth: number
-  activeId: string | null
-  onSelect: (id: string) => void
-  onMoveRequest: (id: string) => void
   dropTarget: string | null
   setDropTarget: (path: string | null) => void
   handleDrop: (e: React.DragEvent, folderPath: string) => void
+  accepts: (e: React.DragEvent) => boolean
+  dragFolder: string | null
+  setDragFolder: (path: string | null) => void
+  isValidFolderTarget: (targetPath: string) => boolean
 }
 
-function TreeItem({
-  node,
-  depth,
-  activeId,
-  onSelect,
-  onMoveRequest,
-  dropTarget,
-  setDropTarget,
-  handleDrop,
-}: TreeItemProps) {
+function TreeItem(props: TreeItemProps) {
+  const {
+    node,
+    depth,
+    activeId,
+    onSelect,
+    onMoveRequest,
+    onMoveFolderRequest,
+    onRenameFile,
+    onRenameFolder,
+    dropTarget,
+    setDropTarget,
+    handleDrop,
+    accepts,
+    setDragFolder,
+    isValidFolderTarget,
+  } = props
   const [open, setOpen] = useState(true)
   const pad = { paddingLeft: `${depth * 14 + 10}px` }
 
   if (node.isDir) {
+    const highlighted = dropTarget === node.path && isValidFolderTarget(node.path)
     return (
       <li>
         <div
-          className={`tree-row folder${dropTarget === node.path ? ' drop-target' : ''}`}
+          className={`tree-row folder${highlighted ? ' drop-target' : ''}`}
           style={pad}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(FOLDER_MIME, node.path)
+            e.dataTransfer.effectAllowed = 'move'
+            setDragFolder(node.path)
+          }}
+          onDragEnd={() => setDragFolder(null)}
           onClick={() => setOpen((o) => !o)}
           onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes(NOTE_MIME)) return
+            if (!accepts(e) || !isValidFolderTarget(node.path)) return
             e.preventDefault()
             e.stopPropagation()
             setDropTarget(node.path)
@@ -157,21 +206,31 @@ function TreeItem({
         >
           <span className="twisty">{open ? '▾' : '▸'}</span>
           <span className="label">{node.name}</span>
+          <button
+            className="row-move"
+            title="Rename folder"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRenameFolder(node.path)
+            }}
+          >
+            ✏️
+          </button>
+          <button
+            className="row-move"
+            title="Move folder"
+            onClick={(e) => {
+              e.stopPropagation()
+              onMoveFolderRequest(node.path)
+            }}
+          >
+            📂
+          </button>
         </div>
         {open && (
           <ul>
             {node.children.map((child) => (
-              <TreeItem
-                key={child.path}
-                node={child}
-                depth={depth + 1}
-                activeId={activeId}
-                onSelect={onSelect}
-                onMoveRequest={onMoveRequest}
-                dropTarget={dropTarget}
-                setDropTarget={setDropTarget}
-                handleDrop={handleDrop}
-              />
+              <TreeItem key={child.path} {...props} node={child} depth={depth + 1} />
             ))}
           </ul>
         )}
@@ -192,6 +251,16 @@ function TreeItem({
         onClick={() => node.id && onSelect(node.id)}
       >
         <span className="label">{node.name}</span>
+        <button
+          className="row-move"
+          title="Rename note"
+          onClick={(e) => {
+            e.stopPropagation()
+            if (node.id) onRenameFile(node.id)
+          }}
+        >
+          ✏️
+        </button>
         <button
           className="row-move"
           title="Move to folder"

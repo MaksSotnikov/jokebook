@@ -204,6 +204,8 @@ function Workspace({
   // Note id whose folder-picker sheet is open (touch-friendly alternative to
   // drag-and-drop); null = closed.
   const [movingId, setMovingId] = useState<string | null>(null)
+  // Folder path whose folder-picker sheet is open (same sheet, folder move).
+  const [movingFolder, setMovingFolder] = useState<string | null>(null)
 
   const cursorRef = useRef(0)
   const saveTimer = useRef<number | null>(null)
@@ -528,6 +530,103 @@ function Workspace({
     }
   }
 
+  /** Rename a note (keeps its folder); `.md` is appended if omitted. */
+  async function renameNote(id: string) {
+    const note = noteItems.find((n) => n.id === id)
+    if (!note) return
+    const slash = note.path.lastIndexOf('/')
+    const dir = slash === -1 ? '' : note.path.slice(0, slash)
+    const currentName = note.path.slice(slash + 1).replace(/\.md$/i, '')
+    const input = window.prompt('Rename note:', currentName)?.trim()
+    if (!input || input === currentName) return
+    const base = /\.md$/i.test(input) ? input : `${input}.md`
+    if (base.includes('/')) {
+      setError('A note name cannot contain "/".')
+      return
+    }
+    const to = dir ? `${dir}/${base}` : base
+    if (noteItems.some((n) => n.id !== id && n.path === to)) {
+      setError('A note with that name already exists here.')
+      return
+    }
+    await saveNow()
+    try {
+      const { results } = await push(serverUrl, token, [
+        {
+          id,
+          path: to,
+          content: note.content,
+          updatedAt: Date.now(),
+          deleted: false,
+          baseVersion: note.version,
+        },
+      ])
+      applyResults(results)
+    } catch (e) {
+      handleError(e)
+    }
+  }
+
+  /** Repath a folder subtree: re-push the folder marker and every note /
+   * sub-folder beneath it from `oldFolder/…` to `newFolder/…` in one batch. */
+  async function repathFolder(oldFolder: string, newFolder: string) {
+    const oldPrefix = `${oldFolder}/`
+    const newPrefix = `${newFolder}/`
+    const items: PushItem[] = notes
+      .filter((n) => n.path.startsWith(oldPrefix))
+      .map((n) => ({
+        id: n.id,
+        path: newPrefix + n.path.slice(oldPrefix.length),
+        content: n.content,
+        updatedAt: Date.now(),
+        deleted: false,
+        baseVersion: n.version,
+      }))
+    if (items.length === 0) return
+    await saveNow()
+    try {
+      const { results } = await push(serverUrl, token, items)
+      applyResults(results)
+    } catch (e) {
+      handleError(e)
+    }
+  }
+
+  /** Rename a folder in place (keeps its parent). */
+  async function renameFolder(folderPath: string) {
+    const slash = folderPath.lastIndexOf('/')
+    const parent = slash === -1 ? '' : folderPath.slice(0, slash)
+    const currentName = folderPath.slice(slash + 1)
+    const input = window.prompt('Rename folder:', currentName)?.trim().replace(/\/+$/, '')
+    if (!input || input === currentName) return
+    if (input.includes('/')) {
+      setError('A folder name cannot contain "/".')
+      return
+    }
+    const to = parent ? `${parent}/${input}` : input
+    if (folderPaths.includes(to)) {
+      setError('A folder with that name already exists here.')
+      return
+    }
+    await repathFolder(folderPath, to)
+  }
+
+  /** Move a folder (and everything in it) into `toParent` (`''` = vault root). */
+  async function moveFolder(folderPath: string, toParent: string) {
+    const base = folderPath.split('/').pop()!
+    const to = toParent ? `${toParent}/${base}` : base
+    if (to === folderPath) return // already there
+    if (toParent === folderPath || toParent.startsWith(`${folderPath}/`)) {
+      setError("A folder can't be moved into itself.")
+      return
+    }
+    if (folderPaths.includes(to)) {
+      setError('A folder with that name already exists there.')
+      return
+    }
+    await repathFolder(folderPath, to)
+  }
+
   async function deleteCurrent() {
     if (!current) return
     if (!window.confirm(`Delete "${current.path}"? This cannot be undone.`)) return
@@ -744,7 +843,11 @@ function Workspace({
           activeId={selectedId}
           onSelect={(id) => void openNote(id)}
           onMove={(id, folder) => void moveNote(id, folder)}
+          onMoveFolder={(path, parent) => void moveFolder(path, parent)}
           onMoveRequest={(id) => setMovingId(id)}
+          onMoveFolderRequest={(path) => setMovingFolder(path)}
+          onRenameFile={(id) => void renameNote(id)}
+          onRenameFolder={(path) => void renameFolder(path)}
         />
       )}
     </aside>
@@ -777,6 +880,9 @@ function Workspace({
           onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
         >
           {mode === 'edit' ? '👁' : '✎'}
+        </button>
+        <button className="icon" title="Rename note" onClick={() => void renameNote(current.id)}>
+          ✏️
         </button>
         <button className="icon" title="Move to folder" onClick={() => setMovingId(current.id)}>
           📂
@@ -902,36 +1008,21 @@ function Workspace({
         sidebar
       )}
 
-      {movingId && (
-        <div className="sheet-backdrop" onClick={() => setMovingId(null)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-head">Move to…</div>
-            <ul className="sheet-list">
-              <li
-                onClick={() => {
-                  void moveNote(movingId, '')
-                  setMovingId(null)
-                }}
-              >
-                🏠 (vault root)
-              </li>
-              {folderPaths
-                .slice()
-                .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-                .map((f) => (
-                  <li
-                    key={f}
-                    onClick={() => {
-                      void moveNote(movingId, f)
-                      setMovingId(null)
-                    }}
-                  >
-                    📁 {f}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        </div>
+      {(movingId || movingFolder) && (
+        <MoveSheet
+          folderPaths={folderPaths}
+          movingFolder={movingFolder}
+          onPick={(target) => {
+            if (movingFolder) void moveFolder(movingFolder, target)
+            else if (movingId) void moveNote(movingId, target)
+            setMovingId(null)
+            setMovingFolder(null)
+          }}
+          onClose={() => {
+            setMovingId(null)
+            setMovingFolder(null)
+          }}
+        />
       )}
 
       {error && (
@@ -939,6 +1030,42 @@ function Workspace({
           {error} <span className="dismiss">✕</span>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Move sheet ──────────────────────────────────────────────────────────
+
+/** Touch-friendly folder picker for moving a note or a folder. When moving a
+ * folder, its own subtree is excluded from the destination list. */
+function MoveSheet({
+  folderPaths,
+  movingFolder,
+  onPick,
+  onClose,
+}: {
+  folderPaths: string[]
+  movingFolder: string | null
+  onPick: (target: string) => void
+  onClose: () => void
+}) {
+  const targets = folderPaths
+    .filter((f) => !movingFolder || (f !== movingFolder && !f.startsWith(`${movingFolder}/`)))
+    .slice()
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">Move to…</div>
+        <ul className="sheet-list">
+          <li onClick={() => onPick('')}>🏠 (vault root)</li>
+          {targets.map((f) => (
+            <li key={f} onClick={() => onPick(f)}>
+              📁 {f}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }
