@@ -16,12 +16,7 @@ export {
   type PushOutcome,
 } from './sync.js'
 
-export {
-  buildLinkGraph,
-  noteName,
-  type IndexedNote,
-  type LinkGraph,
-} from './links.js'
+export { buildLinkGraph, noteName, type IndexedNote, type LinkGraph } from './links.js'
 
 export {
   parseJokes,
@@ -34,12 +29,23 @@ export {
   wordCount,
   performedVersion,
   jokeSetSeconds,
+  jokeSummary,
   WORDS_PER_MINUTE,
   type JokeVersion,
   type JokeSegment,
   type TextSegment,
   type Segment,
+  type JokeSummary,
 } from './jokes.js'
+
+export {
+  parseSet,
+  isSetNote,
+  renderSet,
+  addBitToSet,
+  removeBitFromSet,
+  moveBitInSet,
+} from './sets.js'
 
 export {
   runSync,

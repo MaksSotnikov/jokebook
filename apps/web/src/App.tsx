@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import {
+  addBitToSet,
   addJokeVersion,
   appendJokes,
   buildLinkGraph,
-  jokeSetSeconds,
+  isSetNote,
+  jokeSummary,
+  moveBitInSet,
   moveJoke,
   noteName,
   parseJokes,
+  parseSet,
   parseTags,
   performedVersion,
+  removeBitFromSet,
   removeJokeVersion,
+  renderSet,
   setVersionStars,
   wrapJoke,
   type ApiNote,
@@ -24,6 +30,7 @@ import { buildTree, Tree } from './Tree'
 import {
   IconArrowDown,
   IconArrowUp,
+  IconChevronDown,
   IconChevronLeft,
   IconClose,
   IconCopy,
@@ -33,6 +40,7 @@ import {
   IconFolderPlus,
   IconHome,
   IconImport,
+  IconLayers,
   IconLogout,
   IconMove,
   IconNote,
@@ -40,6 +48,7 @@ import {
   IconPlus,
   IconRefresh,
   IconRename,
+  IconSearch,
   IconTag,
   IconTrash,
 } from './icons'
@@ -54,6 +63,9 @@ import {
 
 const AUTH_KEY = 'notes.web.auth'
 const SAVE_DEBOUNCE_MS = 800
+// Bounds for the draggable sidebar width (two-pane layouts).
+const SIDEBAR_MIN = 220
+const SIDEBAR_MAX = 620
 
 interface Auth {
   serverUrl: string
@@ -230,7 +242,39 @@ function Workspace({
       return next
     })
   }, [])
+
+  /** Drag the divider between the sidebar and the content pane. The app spans
+   * the full viewport in two-pane mode, so the pointer's X is the new width. */
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX))
+      widthRef.current = w
+      setSidebarW(w)
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      localStorage.setItem('notes.web.sidebarW', String(widthRef.current))
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
   const importRef = useRef<HTMLInputElement>(null)
+  // Draggable split between sidebar and content (two-pane layouts only).
+  const [sidebarW, setSidebarW] = useState(() => {
+    const v = Number(localStorage.getItem('notes.web.sidebarW'))
+    return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : 304
+  })
+  const widthRef = useRef(sidebarW)
+  // Сэт dropdown (list of sets + "build a new set") open state.
+  const [showSets, setShowSets] = useState(false)
+  // Open when the "Add bit" picker sheet is showing (set view only).
+  const [addingBit, setAddingBit] = useState(false)
   const [notes, setNotes] = useState<ApiNote[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -265,16 +309,22 @@ function Workspace({
   // Folders ride the sync protocol as zero-content markers whose path ends in
   // `/` (see Tree.tsx / the desktop sync adapter). Split them out so only real
   // notes feed content, links, search and the note list.
-  const noteItems = useMemo(() => notes.filter((n) => !n.path.endsWith('/')), [notes])
+  const realNotes = useMemo(() => notes.filter((n) => !n.path.endsWith('/')), [notes])
+  // Sets are notes whose body is a `:::set` playlist of bits; they live in the
+  // Сэт dropdown, not the note tree. `noteItems` is therefore the bits/notes.
+  const setItems = useMemo(() => realNotes.filter((n) => isSetNote(n.content)), [realNotes])
+  const noteItems = useMemo(() => realNotes.filter((n) => !isSetNote(n.content)), [realNotes])
   const folderPaths = useMemo(
     () => notes.filter((n) => n.path.endsWith('/')).map((n) => n.path.replace(/\/+$/, '')),
     [notes],
   )
 
+  // The open note may be a set or a regular note, so resolve against all of them.
   const current = useMemo(
-    () => noteItems.find((n) => n.id === selectedId) ?? null,
-    [noteItems, selectedId],
+    () => realNotes.find((n) => n.id === selectedId) ?? null,
+    [realNotes, selectedId],
   )
+  const isSet = useMemo(() => (current ? isSetNote(current.content) : false), [current])
   const paths = useMemo(() => noteItems.map((n) => n.path), [noteItems])
 
   const linkGraph = useMemo(
@@ -560,7 +610,7 @@ function Workspace({
 
   async function openNote(id: string) {
     await saveNow()
-    const note = noteItems.find((n) => n.id === id)
+    const note = realNotes.find((n) => n.id === id)
     if (!note) return
     setSelectedId(id)
     setDraft(note.content)
@@ -619,10 +669,41 @@ function Workspace({
     }
   }
 
+  /** Create a new (empty) set and open it. A set is just a note whose body is a
+   * `:::set` playlist, so it reuses the ordinary create/rename/delete paths. */
+  async function newSet() {
+    setShowSets(false)
+    await saveNow()
+    const name = window.prompt('Название сэта (без .md):')?.trim()
+    if (!name) return
+    const base = name.toLowerCase().endsWith('.md') ? name : `${name}.md`
+    if (realNotes.some((n) => n.path === base)) {
+      setError('Заметка с таким именем уже существует.')
+      return
+    }
+    await createWithPath(base, renderSet([]))
+  }
+
+  /** Add the bit at `path` to the open set (operating on the live draft). */
+  function addBit(path: string) {
+    setAddingBit(false)
+    onEdit(addBitToSet(draft, path))
+  }
+
+  /** Remove a bit from the open set. */
+  function removeBit(path: string) {
+    onEdit(removeBitFromSet(draft, path))
+  }
+
+  /** Reorder a bit within the open set (`-1` up, `+1` down). */
+  function moveBit(index: number, dir: -1 | 1) {
+    onEdit(moveBitInSet(draft, index, dir))
+  }
+
   /** Move a note into `toFolder` (`''` = vault root) by repathing it on the server. */
   async function moveNote(id: string, toFolder: string) {
     await saveNow()
-    const note = noteItems.find((n) => n.id === id)
+    const note = realNotes.find((n) => n.id === id)
     if (!note) return
     const base = note.path.split('/').pop()!
     const to = toFolder ? `${toFolder}/${base}` : base
@@ -646,7 +727,7 @@ function Workspace({
 
   /** Rename a note (keeps its folder); `.md` is appended if omitted. */
   async function renameNote(id: string) {
-    const note = noteItems.find((n) => n.id === id)
+    const note = realNotes.find((n) => n.id === id)
     if (!note) return
     const slash = note.path.lastIndexOf('/')
     const dir = slash === -1 ? '' : note.path.slice(0, slash)
@@ -659,7 +740,7 @@ function Workspace({
       return
     }
     const to = dir ? `${dir}/${base}` : base
-    if (noteItems.some((n) => n.id !== id && n.path === to)) {
+    if (realNotes.some((n) => n.id !== id && n.path === to)) {
       setError('A note with that name already exists here.')
       return
     }
@@ -848,13 +929,29 @@ function Workspace({
 
   // Joke tally for the end-of-note summary. Ratings/timing use each joke's
   // best (performed) version; the average is over jokes with any rating.
-  const jokeStats = useMemo(() => {
-    const jokes = segments.filter((s): s is JokeSegment => s.type === 'joke')
-    const best = jokes.map((j) => performedVersion(j.versions).stars)
-    const rated = best.filter((s) => s > 0)
-    const avg = rated.length ? rated.reduce((sum, s) => sum + s, 0) / rated.length : null
-    return { count: jokes.length, rated: rated.length, avg, seconds: jokeSetSeconds(jokes) }
-  }, [segments])
+  const jokeStats = useMemo(() => jokeSummary(draft), [draft])
+
+  // Sets shown in the Сэт dropdown, alphabetical by name.
+  const sortedSets = useMemo(
+    () => [...setItems].sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase())),
+    [setItems],
+  )
+
+  // Ordered bit paths of the open set (only meaningful while a set is open).
+  const setBits = useMemo(() => (isSet ? (parseSet(draft) ?? []) : []), [isSet, draft])
+  // Resolve each bit to its note + a joke summary for the running order.
+  const setRows = useMemo(
+    () =>
+      setBits.map((path) => {
+        const note = noteItems.find((n) => n.path === path)
+        return { path, note: note ?? null, summary: note ? jokeSummary(note.content) : null }
+      }),
+    [setBits, noteItems],
+  )
+  const setSeconds = useMemo(
+    () => setRows.reduce((sum, r) => sum + (r.summary?.seconds ?? 0), 0),
+    [setRows],
+  )
 
   // Drop any joke selection when the note or mode changes — joke indices only
   // stay valid within a single note's current preview.
@@ -862,6 +959,11 @@ function Workspace({
     setPickedJokes(new Set())
     setSendingJokes(false)
   }, [selectedId, mode])
+
+  // Close the bit picker whenever the open note changes.
+  useEffect(() => {
+    setAddingBit(false)
+  }, [selectedId])
 
   const sidebar = (
     <aside className="sidebar">
@@ -1009,6 +1111,45 @@ function Workspace({
           onRenameFolder={(path) => void renameFolder(path)}
         />
       )}
+
+      {/* Сэт dropdown — pinned below the note list. */}
+      <div className={`setbar${showSets ? ' open' : ''}`}>
+        {showSets && (
+          <div className="set-menu">
+            {sortedSets.length === 0 ? (
+              <p className="set-empty">Пока нет сэтов.</p>
+            ) : (
+              <ul>
+                {sortedSets.map((s) => (
+                  <li
+                    key={s.id}
+                    className={s.id === selectedId ? 'active' : undefined}
+                    onClick={() => {
+                      setShowSets(false)
+                      void openNote(s.id)
+                    }}
+                  >
+                    <IconLayers />
+                    <span>{noteName(s.path)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button className="set-new" onClick={() => void newSet()}>
+              <IconPlus /> Собрать новый сэт
+            </button>
+          </div>
+        )}
+        <button
+          className={`set-toggle${showSets ? ' active' : ''}`}
+          onClick={() => setShowSets((s) => !s)}
+        >
+          <IconLayers />
+          <span className="set-toggle-label">Сэт</span>
+          {sortedSets.length > 0 && <span className="set-toggle-count">{sortedSets.length}</span>}
+          <IconChevronDown />
+        </button>
+      </div>
     </aside>
   )
 
@@ -1131,7 +1272,10 @@ function Workspace({
           <span className="joke-stats-count">
             🎤 {jokeStats.count} joke{jokeStats.count > 1 ? 's' : ''}
           </span>
-          <span className="joke-stats-time" title="Estimated stage time at 150 words/min (best version of each joke)">
+          <span
+            className="joke-stats-time"
+            title="Estimated stage time at 150 words/min (best version of each joke)"
+          >
             ⏱ {fmtTime(jokeStats.seconds)}
           </span>
           <span className="joke-stats-avg">
@@ -1163,6 +1307,132 @@ function Workspace({
     </section>
   )
 
+  // The set view: a two-part running order — a list of bits (name · time · avg
+  // rating) up top, and the composed full text of every bit below it.
+  const setView = current && isSet && (
+    <section className="content">
+      <header className="bar">
+        {!twoPane && (
+          <button className="icon" title="Back" onClick={() => void back()}>
+            <IconChevronLeft />
+          </button>
+        )}
+        <span className="bar-title" title={current.path}>
+          <IconLayers /> {noteName(current.path)}
+        </span>
+        {!wide && (
+          <button
+            className={`icon${pinned ? ' active' : ''}`}
+            title={pinned ? 'Unpin menu' : 'Pin menu'}
+            onClick={togglePinned}
+          >
+            <IconPin />
+          </button>
+        )}
+        <span className={`status ${status}`}>{status}</span>
+        <button
+          className="icon"
+          title="Переименовать сэт"
+          onClick={() => void renameNote(current.id)}
+        >
+          <IconRename />
+        </button>
+        <button className="icon danger" title="Удалить сэт" onClick={() => void deleteCurrent()}>
+          <IconTrash />
+        </button>
+      </header>
+
+      <div className="note-body set-body">
+        <div className="set-toolbar">
+          <button className="set-add-bit" onClick={() => setAddingBit(true)}>
+            <IconPlus /> Добавить бит
+          </button>
+          {setRows.length > 0 && (
+            <span className="set-total" title="Суммарный хронометраж лучших версий шуток">
+              {setRows.length} бит{setRows.length === 1 ? '' : 'ов'} · ⏱ {fmtTime(setSeconds)}
+            </span>
+          )}
+        </div>
+
+        {setRows.length === 0 ? (
+          <p className="empty">В сэте пока нет битов. Нажмите «Добавить бит».</p>
+        ) : (
+          <>
+            <ul className="set-list">
+              {setRows.map((row, i) => (
+                <li key={row.path} className={`set-row${row.note ? '' : ' missing'}`}>
+                  <div
+                    className="set-row-main"
+                    onClick={() => row.note && void openNote(row.note.id)}
+                  >
+                    <span className="set-row-name">{noteName(row.path)}</span>
+                    <span className="set-row-meta">
+                      {row.summary ? (
+                        <>
+                          <span className="set-row-time">⏱ {fmtTime(row.summary.seconds)}</span>
+                          <span className="set-row-avg">
+                            {row.summary.avg !== null ? (
+                              <>
+                                <span className="star on">★</span> {row.summary.avg.toFixed(1)}
+                              </>
+                            ) : (
+                              <span className="joke-stats-dim">без оценок</span>
+                            )}
+                          </span>
+                          <span className="joke-stats-dim">🎤 {row.summary.count}</span>
+                        </>
+                      ) : (
+                        <span className="joke-stats-dim">бит не найден</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="set-row-actions">
+                    <button
+                      className="joke-arrow"
+                      title="Выше"
+                      disabled={i === 0}
+                      onClick={() => moveBit(i, -1)}
+                    >
+                      <IconArrowUp />
+                    </button>
+                    <button
+                      className="joke-arrow"
+                      title="Ниже"
+                      disabled={i === setRows.length - 1}
+                      onClick={() => moveBit(i, 1)}
+                    >
+                      <IconArrowDown />
+                    </button>
+                    <button
+                      className="set-row-del"
+                      title="Убрать из сэта"
+                      onClick={() => removeBit(row.path)}
+                    >
+                      <IconClose />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="set-script preview" onClick={onPreviewClick}>
+              {setRows.map((row) => (
+                <section key={row.path} className="set-script-bit">
+                  <h2 className="set-script-title">{noteName(row.path)}</h2>
+                  {row.note ? (
+                    <BitBody content={row.note.content} />
+                  ) : (
+                    <p className="joke-stats-dim">Бит «{row.path}» не найден.</p>
+                  )}
+                </section>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  )
+
   const welcome = (
     <section className="content welcome">
       <div className="welcome-inner">
@@ -1176,17 +1446,42 @@ function Workspace({
     </section>
   )
 
+  const mainPane = current ? (isSet ? setView : noteView) : welcome
+
   return (
-    <div className={`app${wide ? ' wide' : ''}${pinned && !wide ? ' pinned' : ''}`}>
+    <div
+      className={`app${wide ? ' wide' : ''}${pinned && !wide ? ' pinned' : ''}`}
+      style={twoPane ? { gridTemplateColumns: `${sidebarW}px minmax(0, 1fr)` } : undefined}
+    >
       {twoPane ? (
         <>
           {sidebar}
-          {current ? noteView : welcome}
+          <div
+            className="resizer"
+            role="separator"
+            aria-orientation="vertical"
+            title="Перетащите, чтобы изменить ширину панелей"
+            onMouseDown={startResize}
+            style={{ left: `${sidebarW}px` }}
+          />
+          {mainPane}
         </>
       ) : current ? (
-        noteView
+        isSet ? (
+          setView
+        ) : (
+          noteView
+        )
       ) : (
         sidebar
+      )}
+
+      {addingBit && current && isSet && (
+        <AddBitSheet
+          bits={noteItems.filter((n) => !setBits.includes(n.path))}
+          onPick={addBit}
+          onClose={() => setAddingBit(false)}
+        />
       )}
 
       {(movingId || movingFolder) && (
@@ -1298,6 +1593,78 @@ function SendJokesSheet({
   )
 }
 
+// ── Set: bit picker + composed body ───────────────────────────────────────
+
+/** Searchable picker for adding a bit (regular note) to the open set. */
+function AddBitSheet({
+  bits,
+  onPick,
+  onClose,
+}: {
+  bits: ApiNote[]
+  onPick: (path: string) => void
+  onClose: () => void
+}) {
+  const [q, setQ] = useState('')
+  const sorted = [...bits].sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase()))
+  const needle = q.trim().toLowerCase()
+  const matches = needle
+    ? sorted.filter(
+        (n) => n.path.toLowerCase().includes(needle) || n.content.toLowerCase().includes(needle),
+      )
+    : sorted
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">Добавить бит</div>
+        <div className="sheet-search">
+          <IconSearch />
+          <input
+            autoFocus
+            placeholder="Поиск бита…"
+            value={q}
+            onChange={(e) => setQ(e.currentTarget.value)}
+          />
+        </div>
+        {matches.length === 0 ? (
+          <p className="empty">
+            {bits.length === 0 ? 'Все биты уже в сэте.' : 'Ничего не найдено.'}
+          </p>
+        ) : (
+          <ul className="sheet-list">
+            {matches.map((n) => (
+              <li key={n.id} onClick={() => onPick(n.path)}>
+                <IconNote /> {n.path}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Render a bit's full content into the set's running order: text as markdown,
+ * each joke as its performed (best-rated) version. */
+function BitBody({ content }: { content: string }) {
+  const segs = useMemo(() => parseJokes(content), [content])
+  return (
+    <>
+      {segs.map((seg, i) =>
+        seg.type === 'text' ? (
+          <div key={i} dangerouslySetInnerHTML={{ __html: renderMd(seg.value) }} />
+        ) : (
+          <div
+            key={i}
+            className="set-script-joke"
+            dangerouslySetInnerHTML={{ __html: renderMd(performedVersion(seg.versions).body) }}
+          />
+        ),
+      )}
+    </>
+  )
+}
+
 // ── Joke block ────────────────────────────────────────────────────────────
 
 /** A clickable 5-star rating. Clicking the current top star again clears it. */
@@ -1361,9 +1728,7 @@ function JokeBlock({
             onClick={(e) => e.stopPropagation()}
             onChange={onTogglePick}
           />
-          <span className="joke-badge">
-            🎤 Joke{multi ? ` · ${versions.length} versions` : ''}
-          </span>
+          <span className="joke-badge">🎤 Joke{multi ? ` · ${versions.length} versions` : ''}</span>
         </label>
         <div className="joke-move" role="group" aria-label="Reorder joke">
           <button

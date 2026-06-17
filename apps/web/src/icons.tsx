@@ -182,3 +182,18 @@ export const IconNote = () => (
     <path d="M9 17h4" />
   </Svg>
 )
+
+export const IconLayers = () => (
+  <Svg>
+    <path d="m12 2 9 5-9 5-9-5 9-5z" />
+    <path d="m3 12 9 5 9-5" />
+    <path d="m3 17 9 5 9-5" />
+  </Svg>
+)
+
+export const IconSearch = () => (
+  <Svg>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m21 21-4.3-4.3" />
+  </Svg>
+)

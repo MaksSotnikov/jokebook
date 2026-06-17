@@ -19,9 +19,7 @@
   --joke-border: #f59e0b;
   --star: #f59e0b;
   --star-off: #e0d2bb;
-  --shadow:
-    0 1px 2px rgba(120, 72, 20, 0.08),
-    0 2px 8px rgba(120, 72, 20, 0.09);
+  --shadow: 0 1px 2px rgba(120, 72, 20, 0.08), 0 2px 8px rgba(120, 72, 20, 0.09);
   --shadow-lg: 0 16px 40px rgba(90, 50, 10, 0.22);
   --radius: 12px;
   --radius-sm: 9px;
@@ -135,6 +133,41 @@ svg {
   border-right: 1px solid var(--border);
 }
 
+/* ── Resizable split (two-pane layouts) ──────────────────────────── */
+.app.wide,
+.app.pinned {
+  position: relative;
+}
+
+/* A thin draggable strip straddling the sidebar/content border. */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 15;
+  touch-action: none;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.resizer:hover::after,
+.resizer:active::after {
+  background: var(--accent);
+}
+
 /* ── Sidebar ─────────────────────────────────────────────────────── */
 .sidebar {
   display: flex;
@@ -152,7 +185,8 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: 0.4rem 0.5rem;
+  flex-wrap: wrap;
   padding: 0.7rem;
   padding-top: max(0.7rem, env(safe-area-inset-top));
   border-bottom: 1px solid var(--border);
@@ -183,6 +217,8 @@ svg {
 
 .sb-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.28rem;
 }
 
@@ -748,8 +784,7 @@ svg {
   border-left: 4px solid var(--joke-border);
   border-radius: 14px;
   background:
-    radial-gradient(120% 80% at 0% 0%, rgba(245, 158, 11, 0.14), transparent 60%),
-    var(--joke-bg);
+    radial-gradient(120% 80% at 0% 0%, rgba(245, 158, 11, 0.14), transparent 60%), var(--joke-bg);
   padding: 0.6rem 0.95rem 0.8rem;
   box-shadow: var(--shadow);
 }
@@ -1081,6 +1116,372 @@ svg {
   color: var(--text-dim);
 }
 
+/* ── Сэт dropdown (sidebar footer) ───────────────────────────────── */
+.setbar {
+  position: relative;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+
+.set-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0.7rem 0.85rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  transition: background 0.12s;
+}
+
+.set-toggle svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--accent);
+}
+
+.set-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.set-toggle.active {
+  color: var(--accent);
+}
+
+.set-toggle-label {
+  flex: 1;
+  text-align: left;
+}
+
+.set-toggle-count {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  min-width: 1.2rem;
+  text-align: center;
+  padding: 0 0.35rem;
+  line-height: 1.25rem;
+}
+
+/* The last chevron rotates open. */
+.set-toggle > svg:last-child {
+  color: var(--text-dim);
+  transition: transform 0.16s;
+}
+
+.setbar.open .set-toggle > svg:last-child {
+  transform: rotate(180deg);
+}
+
+/* Pops up above the toggle so it never gets clipped at the viewport bottom. */
+.set-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  box-shadow: var(--shadow-lg);
+  max-height: 50vh;
+  overflow-y: auto;
+  animation: rise 0.14s ease;
+}
+
+.set-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+}
+
+.set-menu li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.set-menu li svg {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--accent);
+}
+
+.set-menu li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-menu li:hover {
+  background: var(--bg-hover);
+}
+
+.set-menu li.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.set-empty {
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  text-align: center;
+  margin: 1rem;
+}
+
+.set-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0.65rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  transition: background 0.12s;
+}
+
+.set-new svg {
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.set-new:hover {
+  background: var(--bg-hover);
+}
+
+/* ── Set view (running order) ────────────────────────────────────── */
+.bar-title svg {
+  vertical-align: -0.18em;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--accent);
+}
+
+.set-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+
+.set-add-bit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
+  transition:
+    filter 0.12s,
+    transform 0.06s;
+}
+
+.set-add-bit svg {
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.set-add-bit:hover {
+  filter: brightness(1.06);
+}
+
+.set-add-bit:active {
+  transform: scale(0.97);
+}
+
+.set-total {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.set-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.6rem 0.7rem 0.4rem;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--joke-border);
+  border-radius: 12px;
+  background: var(--joke-bg);
+  margin-bottom: 0.5rem;
+  box-shadow: var(--shadow);
+}
+
+.set-row.missing {
+  border-left-color: var(--danger);
+  background: var(--bg-alt);
+}
+
+.set-row-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.set-row-name {
+  display: block;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.set-row-time {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-row-avg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.set-row-avg .star {
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.set-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.set-row-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  border-radius: 7px;
+  width: 1.75rem;
+  height: 1.75rem;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.set-row-del svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.set-row-del:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--bg-hover);
+}
+
+/* The composed full text of every bit, in order. */
+.set-script {
+  border-top: 2px dashed var(--joke-border);
+  margin-top: 0.3rem;
+}
+
+.set-script-bit + .set-script-bit {
+  margin-top: 1.4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.set-script-title {
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  margin: 0 0 0.5rem;
+}
+
+.set-script-joke {
+  border-left: 3px solid var(--joke-border);
+  padding: 0.1rem 0 0.1rem 0.9rem;
+  margin: 0.7rem 0;
+}
+
+.set-script-joke > :first-child {
+  margin-top: 0;
+}
+
+.set-script-joke > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Bottom-sheet search (bit picker) ────────────────────────────── */
+.sheet-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 1.1rem 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.sheet-search svg {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--text-dim);
+}
+
+.sheet-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.sheet-search input:focus {
+  outline: none;
+}
+
 /* ── Backlinks ───────────────────────────────────────────────────── */
 .backlinks {
   border-top: 1px solid var(--border);
@@ -1126,9 +1527,7 @@ svg {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background:
-    radial-gradient(80% 50% at 50% 0%, var(--accent-soft), transparent 70%),
-    var(--bg);
+  background: radial-gradient(80% 50% at 50% 0%, var(--accent-soft), transparent 70%), var(--bg);
 }
 
 .welcome-inner {
@@ -1199,9 +1598,7 @@ svg {
   flex-direction: column;
   justify-content: center;
   gap: 0.7rem;
-  background:
-    radial-gradient(70% 40% at 50% 8%, var(--accent-soft), transparent 70%),
-    var(--bg);
+  background: radial-gradient(70% 40% at 50% 8%, var(--accent-soft), transparent 70%), var(--bg);
 }
 
 .login h1 {

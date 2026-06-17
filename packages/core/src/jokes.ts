@@ -220,3 +220,22 @@ export function jokeSetSeconds(jokes: JokeSegment[]): number {
   const words = jokes.reduce((sum, j) => sum + wordCount(performedVersion(j.versions).body), 0)
   return (words / WORDS_PER_MINUTE) * 60
 }
+
+/** Tally of a note's jokes for the end-of-note / set summaries. Ratings and
+ * timing use each joke's performed (best) version; the average is over the
+ * jokes that carry any rating. */
+export interface JokeSummary {
+  count: number
+  rated: number
+  avg: number | null
+  seconds: number
+}
+
+/** Summarise the jokes in a chunk of note text. */
+export function jokeSummary(text: string): JokeSummary {
+  const jokes = parseJokes(text).filter((s): s is JokeSegment => s.type === 'joke')
+  const best = jokes.map((j) => performedVersion(j.versions).stars)
+  const rated = best.filter((s) => s > 0)
+  const avg = rated.length ? rated.reduce((sum, s) => sum + s, 0) / rated.length : null
+  return { count: jokes.length, rated: rated.length, avg, seconds: jokeSetSeconds(jokes) }
+}
