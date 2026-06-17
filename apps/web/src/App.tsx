@@ -1300,6 +1300,107 @@ function Workspace({
     setEditingBit(null)
   }, [selectedId])
 
+  // ── Hardware / browser Back button ───────────────────────────────────────
+  // A PWA with no router exits the app on the Android Back press. Instead, trap
+  // Back while there's in-app navigation to unwind (an open note, sheet, dialog,
+  // dropdown or active filter) and undo ONE layer per press; only once nothing
+  // is left does Back fall through and close the app.
+  const backArmedRef = useRef(false) // is our history "trap" entry on the stack?
+  const selfPopRef = useRef(false) // ignore the popstate from our own cleanup back()
+  const goBackRef = useRef<() => boolean>(() => false)
+
+  // Anything Back should unwind before leaving the app. Recomputed each render.
+  const canGoBack =
+    dialog !== null ||
+    sendingJokes ||
+    addingBit ||
+    editingBit !== null ||
+    movingId !== null ||
+    movingFolder !== null ||
+    showData ||
+    showSets ||
+    showTags ||
+    tagFilter !== null ||
+    (!twoPane && selectedId !== null)
+
+  // Close the top-most (most-recently-opened) layer; one per Back press. Kept in
+  // a ref so the popstate listener (registered once) always sees fresh state.
+  goBackRef.current = () => {
+    if (dialog !== null) {
+      if (dialog.kind === 'prompt') dialog.resolve(null)
+      else dialog.resolve(false)
+      setDialog(null)
+      return true
+    }
+    if (sendingJokes) {
+      setSendingJokes(false)
+      return true
+    }
+    if (addingBit) {
+      setAddingBit(false)
+      return true
+    }
+    if (editingBit !== null) {
+      setEditingBit(null)
+      return true
+    }
+    if (movingId !== null || movingFolder !== null) {
+      setMovingId(null)
+      setMovingFolder(null)
+      return true
+    }
+    if (showData) {
+      setShowData(false)
+      return true
+    }
+    if (showSets) {
+      setShowSets(false)
+      return true
+    }
+    if (showTags) {
+      setShowTags(false)
+      return true
+    }
+    if (tagFilter !== null) {
+      setTagFilter(null)
+      return true
+    }
+    if (!twoPane && selectedId !== null) {
+      void back()
+      return true
+    }
+    return false
+  }
+
+  // Keep exactly one trap entry on the history stack while `canGoBack` holds.
+  useEffect(() => {
+    if (canGoBack && !backArmedRef.current) {
+      history.pushState({ jbTrap: true }, '')
+      backArmedRef.current = true
+    } else if (!canGoBack && backArmedRef.current) {
+      // Last layer was closed via an in-app control — drop the trap so the next
+      // Back exits the app rather than being silently swallowed.
+      backArmedRef.current = false
+      selfPopRef.current = true
+      history.back()
+    }
+  }, [canGoBack])
+
+  useEffect(() => {
+    const onPop = () => {
+      if (selfPopRef.current) {
+        selfPopRef.current = false // our own cleanup — not a user Back press
+        return
+      }
+      // User pressed Back, consuming our trap entry. Undo one layer; if more
+      // remain, the effect above re-arms a fresh trap.
+      backArmedRef.current = false
+      goBackRef.current()
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   const sidebar = (
     <aside className="sidebar">
       <header className="sb-head">
