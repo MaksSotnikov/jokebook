@@ -2,7 +2,7 @@
  * shell load offline. Network-first so a connected device always gets fresh
  * code & data; falls back to the cache (and the cached app shell for
  * navigations) when offline. */
-const CACHE = 'jokebook-v1'
+const CACHE = 'jokebook-v2'
 
 self.addEventListener('install', () => self.skipWaiting())
 

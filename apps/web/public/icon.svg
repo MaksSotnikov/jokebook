@@ -5,11 +5,33 @@
       <stop offset="1" stop-color="#f59e0b"/>
     </linearGradient>
   </defs>
-  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#g)"/>
-  <g fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="216" y="120" width="80" height="156" rx="40" fill="#ffffff" stroke="none"/>
-    <path d="M176 232a80 80 0 0 0 160 0"/>
-    <path d="M256 312v62"/>
-    <path d="M212 388h88"/>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <rect x="96" y="138" width="320" height="238" rx="20" fill="#fffaf2"/>
+  <rect x="250" y="138" width="12" height="238" fill="#f0dcc4"/>
+  <g fill="#e8a766">
+    <ellipse cx="256" cy="162" rx="13" ry="7"/>
+    <ellipse cx="256" cy="196" rx="13" ry="7"/>
+    <ellipse cx="256" cy="230" rx="13" ry="7"/>
+    <ellipse cx="256" cy="264" rx="13" ry="7"/>
+    <ellipse cx="256" cy="298" rx="13" ry="7"/>
+    <ellipse cx="256" cy="332" rx="13" ry="7"/>
+  </g>
+  <g stroke="#f3d2ab" stroke-width="6" stroke-linecap="round">
+    <line x1="120" y1="184" x2="232" y2="184"/>
+    <line x1="120" y1="216" x2="232" y2="216"/>
+    <line x1="120" y1="248" x2="232" y2="248"/>
+    <line x1="280" y1="184" x2="392" y2="184"/>
+    <line x1="280" y1="216" x2="392" y2="216"/>
+    <line x1="280" y1="248" x2="392" y2="248"/>
+  </g>
+  <g transform="rotate(-32 256 300)">
+    <rect x="150" y="311" width="150" height="22" rx="11" fill="#2a2018"/>
+    <rect x="296" y="305" width="16" height="34" rx="5" fill="#f59e0b"/>
+    <rect x="308" y="294" width="70" height="56" rx="28" fill="#34291e"/>
+    <g stroke="#fff7ea" stroke-width="3.5" stroke-linecap="round">
+      <line x1="326" y1="306" x2="326" y2="338"/>
+      <line x1="343" y1="304" x2="343" y2="340"/>
+      <line x1="360" y1="306" x2="360" y2="338"/>
+    </g>
   </g>
 </svg>
