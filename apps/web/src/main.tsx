@@ -8,3 +8,11 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <App />
   </React.StrictMode>,
 )
+
+// Register the service worker so the app is installable on Android and its
+// shell loads offline. Best-effort: failures (e.g. on http) are ignored.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('./sw.js').catch(() => {})
+  })
+}

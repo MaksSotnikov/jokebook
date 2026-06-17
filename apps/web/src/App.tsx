@@ -26,6 +26,7 @@ import {
   type PushResult,
 } from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
+import { makeZip } from './zip'
 import { buildTree, Tree } from './Tree'
 import {
   IconArrowDown,
@@ -35,11 +36,13 @@ import {
   IconClose,
   IconCopy,
   IconEdit,
+  IconExport,
   IconEye,
   IconFolder,
   IconFolderPlus,
   IconHome,
   IconImport,
+  IconImportExport,
   IconLayers,
   IconLogout,
   IconMove,
@@ -74,6 +77,27 @@ interface Auth {
 }
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved'
+
+/** An in-app modal request (replaces the browser's `prompt`/`confirm`), with a
+ * `resolve` that hands the answer back to the awaiting caller. */
+type DialogState =
+  | {
+      kind: 'prompt'
+      title: string
+      label?: string
+      placeholder?: string
+      initial: string
+      confirmText: string
+      resolve: (value: string | null) => void
+    }
+  | {
+      kind: 'confirm'
+      title: string
+      message: string
+      confirmText: string
+      danger?: boolean
+      resolve: (value: boolean) => void
+    }
 
 /** UUID v4. Falls back to `getRandomValues` because `crypto.randomUUID` is
  * unavailable in insecure contexts (e.g. a phone hitting `http://<LAN-IP>`). */
@@ -294,6 +318,10 @@ function Workspace({
   const [pickedJokes, setPickedJokes] = useState<Set<number>>(() => new Set())
   // True while the "send jokes to another note" target picker is open.
   const [sendingJokes, setSendingJokes] = useState(false)
+  // Open when the import/export menu is showing.
+  const [showData, setShowData] = useState(false)
+  // The open in-app dialog (styled prompt/confirm), or null when none.
+  const [dialog, setDialog] = useState<DialogState | null>(null)
 
   const cursorRef = useRef(0)
   const saveTimer = useRef<number | null>(null)
@@ -436,6 +464,68 @@ function Workspace({
     saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DEBOUNCE_MS)
   }
 
+  /** Show a styled text-input dialog; resolves with the entered string, or
+   * `null` if the user cancels. (In-app replacement for `window.prompt`.) */
+  function uiPrompt(opts: {
+    title: string
+    label?: string
+    placeholder?: string
+    initial?: string
+    confirmText?: string
+  }): Promise<string | null> {
+    return new Promise((resolve) =>
+      setDialog({
+        kind: 'prompt',
+        title: opts.title,
+        label: opts.label,
+        placeholder: opts.placeholder,
+        initial: opts.initial ?? '',
+        confirmText: opts.confirmText ?? 'OK',
+        resolve,
+      }),
+    )
+  }
+
+  /** Show a styled confirmation dialog; resolves true when confirmed. (In-app
+   * replacement for `window.confirm`.) */
+  function uiConfirm(opts: {
+    title: string
+    message: string
+    confirmText?: string
+    danger?: boolean
+  }): Promise<boolean> {
+    return new Promise((resolve) =>
+      setDialog({
+        kind: 'confirm',
+        title: opts.title,
+        message: opts.message,
+        confirmText: opts.confirmText ?? 'OK',
+        danger: opts.danger,
+        resolve,
+      }),
+    )
+  }
+
+  /** Download the whole vault as a `.zip` of `.md` files (folders preserved via
+   * the paths), so notes can be backed up or moved into another editor. */
+  function exportAll() {
+    setShowData(false)
+    const entries = realNotes.map((n) => ({ path: n.path, content: n.content }))
+    if (entries.length === 0) {
+      setError('No notes to export yet.')
+      return
+    }
+    const url = URL.createObjectURL(makeZip(entries))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'joke-book-export.zip'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setError(`Exported ${entries.length} note${entries.length === 1 ? '' : 's'}.`)
+  }
+
   /** Wrap the current editor selection as a joke block. Stays in edit mode so
    * the user can keep marking jokes; preview is only shown when they ask. */
   function markJoke() {
@@ -532,18 +622,21 @@ function Workspace({
     }
   }
 
-  /** Import one or more Obsidian `.md` files as notes, preserving any folder
-   * structure carried in the picked paths. Existing paths are skipped so an
-   * import never silently shadows a note already in the vault.
+  /** Import one or more text files as notes, preserving any folder structure
+   * carried in the picked paths. Markdown and common plain-text formats
+   * (`.md`, `.markdown`, `.txt`, …) are accepted; non-`.md` files are stored
+   * with a `.md` extension so they become first-class notes. Existing paths are
+   * skipped so an import never silently shadows a note already in the vault.
    *
    * Takes an already-snapshotted `File[]` (not the input's live `FileList`):
    * the change handler resets `input.value` right after calling us, which
    * empties the `FileList` — but the `File` objects stay readable. */
   async function importFiles(picked: File[]) {
     if (picked.length === 0) return
-    const files = picked.filter((f) => f.name.toLowerCase().endsWith('.md'))
+    const TEXT_RE = /\.(md|markdown|mdown|mkd|txt|text|log)$/i
+    const files = picked.filter((f) => TEXT_RE.test(f.name))
     if (files.length === 0) {
-      setError('Select one or more .md files to import.')
+      setError('Select one or more text files (.md, .txt, …) to import.')
       return
     }
     await saveNow()
@@ -553,8 +646,12 @@ function Workspace({
     let skipped = 0
     for (const f of files) {
       // A directory pick exposes the path via webkitRelativePath; a plain
-      // multi-file pick only gives the filename.
-      const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/').replace(/^\/+/, '')
+      // multi-file pick only gives the filename. Any non-`.md` text extension
+      // is normalised to `.md` so the import lands as an ordinary note.
+      const rel = (f.webkitRelativePath || f.name)
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+        .replace(/\.(markdown|mdown|mkd|txt|text|log)$/i, '.md')
       if (taken.has(rel)) {
         skipped++
         continue
@@ -647,7 +744,9 @@ function Workspace({
 
   async function newNote() {
     await saveNow()
-    const name = window.prompt('New note name (without .md):')?.trim()
+    const name = (
+      await uiPrompt({ title: 'New note', label: 'Name (without .md)', confirmText: 'Create' })
+    )?.trim()
     if (!name) return
     const path = name.toLowerCase().endsWith('.md') ? name : `${name}.md`
     await createWithPath(path, '')
@@ -656,7 +755,9 @@ function Workspace({
   /** Create an (empty) folder by pushing a zero-content marker (path + `/`). */
   async function newFolder() {
     await saveNow()
-    const name = window.prompt('New folder name:')?.trim()
+    const name = (
+      await uiPrompt({ title: 'New folder', label: 'Folder name', confirmText: 'Create' })
+    )?.trim()
     if (!name) return
     const path = `${name.replace(/\/+$/, '')}/`
     try {
@@ -674,7 +775,9 @@ function Workspace({
   async function newSet() {
     setShowSets(false)
     await saveNow()
-    const name = window.prompt('Название сэта (без .md):')?.trim()
+    const name = (
+      await uiPrompt({ title: 'Новый сэт', label: 'Название (без .md)', confirmText: 'Создать' })
+    )?.trim()
     if (!name) return
     const base = name.toLowerCase().endsWith('.md') ? name : `${name}.md`
     if (realNotes.some((n) => n.path === base)) {
@@ -732,7 +835,14 @@ function Workspace({
     const slash = note.path.lastIndexOf('/')
     const dir = slash === -1 ? '' : note.path.slice(0, slash)
     const currentName = note.path.slice(slash + 1).replace(/\.md$/i, '')
-    const input = window.prompt('Rename note:', currentName)?.trim()
+    const input = (
+      await uiPrompt({
+        title: 'Rename note',
+        label: 'New name',
+        initial: currentName,
+        confirmText: 'Rename',
+      })
+    )?.trim()
     if (!input || input === currentName) return
     const base = /\.md$/i.test(input) ? input : `${input}.md`
     if (base.includes('/')) {
@@ -792,7 +902,16 @@ function Workspace({
     const slash = folderPath.lastIndexOf('/')
     const parent = slash === -1 ? '' : folderPath.slice(0, slash)
     const currentName = folderPath.slice(slash + 1)
-    const input = window.prompt('Rename folder:', currentName)?.trim().replace(/\/+$/, '')
+    const input = (
+      await uiPrompt({
+        title: 'Rename folder',
+        label: 'New name',
+        initial: currentName,
+        confirmText: 'Rename',
+      })
+    )
+      ?.trim()
+      .replace(/\/+$/, '')
     if (!input || input === currentName) return
     if (input.includes('/')) {
       setError('A folder name cannot contain "/".')
@@ -824,7 +943,15 @@ function Workspace({
 
   async function deleteCurrent() {
     if (!current) return
-    if (!window.confirm(`Delete "${current.path}"? This cannot be undone.`)) return
+    if (
+      !(await uiConfirm({
+        title: 'Delete note',
+        message: `Delete "${current.path}"? This cannot be undone.`,
+        confirmText: 'Delete',
+        danger: true,
+      }))
+    )
+      return
     if (saveTimer.current !== null) {
       clearTimeout(saveTimer.current)
       saveTimer.current = null
@@ -1000,10 +1127,10 @@ function Workspace({
           </button>
           <button
             className="icon"
-            title="Import .md files from Obsidian"
-            onClick={() => importRef.current?.click()}
+            title="Import / Export notes"
+            onClick={() => setShowData(true)}
           >
-            <IconImport />
+            <IconImportExport />
           </button>
           {!wide && (
             <button
@@ -1022,7 +1149,7 @@ function Workspace({
       <input
         ref={importRef}
         type="file"
-        accept=".md,text/markdown"
+        accept=".md,.markdown,.mdown,.mkd,.txt,.text,.log,text/markdown,text/plain"
         multiple
         hidden
         onChange={(e) => {
@@ -1451,19 +1578,24 @@ function Workspace({
   return (
     <div
       className={`app${wide ? ' wide' : ''}${pinned && !wide ? ' pinned' : ''}`}
-      style={twoPane ? { gridTemplateColumns: `${sidebarW}px minmax(0, 1fr)` } : undefined}
+      // The pixel sidebar width + draggable resizer are a desktop affordance;
+      // on a pinned phone, fall back to the CSS percentage split so the note
+      // column keeps a usable share of the narrow viewport.
+      style={wide ? { gridTemplateColumns: `${sidebarW}px minmax(0, 1fr)` } : undefined}
     >
       {twoPane ? (
         <>
           {sidebar}
-          <div
-            className="resizer"
-            role="separator"
-            aria-orientation="vertical"
-            title="Перетащите, чтобы изменить ширину панелей"
-            onMouseDown={startResize}
-            style={{ left: `${sidebarW}px` }}
-          />
+          {wide && (
+            <div
+              className="resizer"
+              role="separator"
+              aria-orientation="vertical"
+              title="Перетащите, чтобы изменить ширину панелей"
+              onMouseDown={startResize}
+              style={{ left: `${sidebarW}px` }}
+            />
+          )}
           {mainPane}
         </>
       ) : current ? (
@@ -1510,6 +1642,19 @@ function Workspace({
         />
       )}
 
+      {showData && (
+        <DataSheet
+          onImport={() => {
+            setShowData(false)
+            importRef.current?.click()
+          }}
+          onExport={exportAll}
+          onClose={() => setShowData(false)}
+        />
+      )}
+
+      {dialog && <Dialog state={dialog} onClose={() => setDialog(null)} />}
+
       {error && (
         <div className="toast" onClick={() => setError(null)}>
           {error} <span className="dismiss">✕</span>
@@ -1552,6 +1697,118 @@ function MoveSheet({
             </li>
           ))}
         </ul>
+      </div>
+    </div>
+  )
+}
+
+// ── Import / Export sheet ───────────────────────────────────────────────
+
+/** The data menu opened by the import/export button: pick which to do. */
+function DataSheet({
+  onImport,
+  onExport,
+  onClose,
+}: {
+  onImport: () => void
+  onExport: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">Import / Export</div>
+        <ul className="sheet-list">
+          <li onClick={onImport}>
+            <IconImport /> Import files…
+          </li>
+          <li onClick={onExport}>
+            <IconExport /> Export all notes (.zip)
+          </li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+// ── Dialog (styled prompt / confirm) ──────────────────────────────────────
+
+/** App-themed modal replacing the browser's `prompt`/`confirm`. Resolves the
+ * promise stored on `state` and then closes. Enter confirms, Escape cancels. */
+function Dialog({ state, onClose }: { state: DialogState; onClose: () => void }) {
+  const [value, setValue] = useState(state.kind === 'prompt' ? state.initial : '')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (state.kind === 'prompt') {
+      const el = inputRef.current
+      el?.focus()
+      el?.select()
+    } else {
+      // Focus the dialog itself so Escape (handled below) works for confirms.
+      boxRef.current?.focus()
+    }
+  }, [state.kind])
+
+  function cancel() {
+    if (state.kind === 'prompt') state.resolve(null)
+    else state.resolve(false)
+    onClose()
+  }
+
+  function confirm() {
+    if (state.kind === 'prompt') state.resolve(value)
+    else state.resolve(true)
+    onClose()
+  }
+
+  return (
+    <div className="dialog-backdrop" onClick={cancel}>
+      <div
+        className="dialog"
+        role="dialog"
+        aria-modal="true"
+        ref={boxRef}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') cancel()
+        }}
+      >
+        <div className="dialog-title">{state.title}</div>
+        {state.kind === 'prompt' ? (
+          <label className="dialog-field">
+            {state.label && <span>{state.label}</span>}
+            <input
+              ref={inputRef}
+              value={value}
+              placeholder={state.placeholder}
+              autoCapitalize="off"
+              autoCorrect="off"
+              onChange={(e) => setValue(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  confirm()
+                }
+              }}
+            />
+          </label>
+        ) : (
+          <p className="dialog-message">{state.message}</p>
+        )}
+        <div className="dialog-actions">
+          <button className="dialog-cancel" onClick={cancel}>
+            Cancel
+          </button>
+          <button
+            className={`dialog-confirm${state.kind === 'confirm' && state.danger ? ' danger' : ''}`}
+            onClick={confirm}
+          >
+            {state.confirmText}
+          </button>
+        </div>
       </div>
     </div>
   )

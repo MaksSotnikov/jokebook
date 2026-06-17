@@ -62,6 +62,25 @@ export const IconImport = () => (
   </Svg>
 )
 
+export const IconExport = () => (
+  <Svg>
+    <path d="M12 21V9" />
+    <path d="m7 14 5-5 5 5" />
+    <path d="M5 3h14" />
+  </Svg>
+)
+
+// Combined import/export glyph for the data menu button: arrows pointing both
+// ways (down = import, up = export).
+export const IconImportExport = () => (
+  <Svg>
+    <path d="M8 3v13" />
+    <path d="m4 7 4-4 4 4" />
+    <path d="M16 21V8" />
+    <path d="m12 17 4 4 4-4" />
+  </Svg>
+)
+
 export const IconPin = () => (
   <Svg>
     <path d="M12 17v5" />

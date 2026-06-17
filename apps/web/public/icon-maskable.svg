@@ -1,0 +1,15 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Joke book">
+  <defs>
+    <linearGradient id="gm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8590c"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" fill="url(#gm)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="220" y="150" width="72" height="142" rx="36" fill="#ffffff" stroke="none"/>
+    <path d="M184 256a72 72 0 0 0 144 0"/>
+    <path d="M256 328v54"/>
+    <path d="M216 394h80"/>
+  </g>
+</svg>
