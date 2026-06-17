@@ -358,6 +358,24 @@ svg {
   color: var(--danger);
 }
 
+.status.offline {
+  background: rgba(120, 113, 108, 0.18);
+  color: var(--text-dim);
+}
+
+/* "offline" pill beside the brand when there's no connection. */
+.offline-pill {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(120, 113, 108, 0.18);
+  color: var(--text-dim);
+  margin-left: 0.4rem;
+}
+
 /* ── Search & flat list ──────────────────────────────────────────── */
 .search {
   margin: 0.6rem;
@@ -1461,6 +1479,57 @@ svg {
 
 .set-script-joke > :last-child {
   margin-bottom: 0;
+}
+
+/* Per-bit header in the composed script: title + edit/revert controls. */
+.set-script-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.set-script-head .set-script-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-script-actions {
+  display: flex;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+/* Badge marking a bit whose text was reworked for this set only. */
+.set-override-badge {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Inline editor for a bit's set-local text. */
+.set-bit-editor {
+  margin: 0.4rem 0 0.2rem;
+}
+
+.set-bit-editor .editor {
+  min-height: 9rem;
+  width: 100%;
+}
+
+.set-bit-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 /* ── Bottom-sheet search (bit picker) ────────────────────────────── */

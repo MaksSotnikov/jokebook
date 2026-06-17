@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   addBitToSet,
+  clearBitOverride,
+  getBitOverride,
+  getBitOverrides,
   isSetNote,
   moveBitInSet,
   parseSet,
   removeBitFromSet,
   renderSet,
+  setBitOverride,
 } from './sets.js'
 
 describe('parseSet', () => {
@@ -96,5 +100,61 @@ describe('moveBitInSet', () => {
   it('is a no-op at the edges', () => {
     expect(moveBitInSet(content, 0, -1)).toBe(content)
     expect(moveBitInSet(content, 2, 1)).toBe(content)
+  })
+})
+
+describe('bit overrides', () => {
+  const base = ':::set\na.md\nb.md\n:::\n'
+
+  it('has no overrides by default', () => {
+    expect(getBitOverrides(base).size).toBe(0)
+    expect(getBitOverride(base, 'a.md')).toBeNull()
+  })
+
+  it('stores set-local text without touching the playlist', () => {
+    const next = setBitOverride(base, 'a.md', 'reworked text')
+    expect(parseSet(next)).toEqual(['a.md', 'b.md'])
+    expect(getBitOverride(next, 'a.md')).toBe('reworked text')
+    expect(getBitOverride(next, 'b.md')).toBeNull()
+  })
+
+  it('preserves an override body containing ::: joke blocks', () => {
+    const body = 'intro\n:::joke 1\npunchline\n:::\noutro'
+    const next = setBitOverride(base, 'b.md', body)
+    expect(getBitOverride(next, 'b.md')).toBe(body)
+    // The playlist still parses cleanly past the override block.
+    expect(parseSet(next)).toEqual(['a.md', 'b.md'])
+  })
+
+  it('keeps multiple overrides independent', () => {
+    let c = setBitOverride(base, 'a.md', 'AAA')
+    c = setBitOverride(c, 'b.md', 'BBB')
+    expect(getBitOverride(c, 'a.md')).toBe('AAA')
+    expect(getBitOverride(c, 'b.md')).toBe('BBB')
+  })
+
+  it('updates an existing override in place', () => {
+    const c = setBitOverride(setBitOverride(base, 'a.md', 'first'), 'a.md', 'second')
+    expect(getBitOverride(c, 'a.md')).toBe('second')
+    expect(getBitOverrides(c).size).toBe(1)
+  })
+
+  it('clears an override back to live text', () => {
+    const c = setBitOverride(base, 'a.md', 'x')
+    expect(getBitOverride(clearBitOverride(c, 'a.md'), 'a.md')).toBeNull()
+  })
+
+  it('drops the override when its bit is removed', () => {
+    const c = setBitOverride(base, 'a.md', 'x')
+    expect(getBitOverride(removeBitFromSet(c, 'a.md'), 'a.md')).toBeNull()
+  })
+
+  it('ignores an override whose bit is no longer in the set', () => {
+    const orphan = `${base}\n:::setbit gone.md\nstale\n:::endbit\n`
+    expect(getBitOverride(renderSet(parseSet(orphan)!), 'gone.md')).toBeNull()
+  })
+
+  it('only writes an override for a bit that is in the set', () => {
+    expect(setBitOverride(base, 'missing.md', 'x')).toBe(base)
   })
 })

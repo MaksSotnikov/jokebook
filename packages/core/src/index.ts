@@ -45,6 +45,10 @@ export {
   addBitToSet,
   removeBitFromSet,
   moveBitInSet,
+  getBitOverrides,
+  getBitOverride,
+  setBitOverride,
+  clearBitOverride,
 } from './sets.js'
 
 export {

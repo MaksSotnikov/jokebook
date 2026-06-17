@@ -5,6 +5,8 @@ import {
   addJokeVersion,
   appendJokes,
   buildLinkGraph,
+  clearBitOverride,
+  getBitOverride,
   isSetNote,
   jokeSummary,
   moveBitInSet,
@@ -17,6 +19,7 @@ import {
   removeBitFromSet,
   removeJokeVersion,
   renderSet,
+  setBitOverride,
   setVersionStars,
   wrapJoke,
   type ApiNote,
@@ -26,6 +29,7 @@ import {
   type PushResult,
 } from '@notes/core'
 import { authenticate, pull, push, UnauthorizedError } from './api'
+import { loadVault, saveVault, vaultKey, type BackupFile } from './local'
 import { makeZip } from './zip'
 import { buildTree, Tree } from './Tree'
 import {
@@ -76,7 +80,7 @@ interface Auth {
   user: { id: string; email: string }
 }
 
-type SaveStatus = 'saved' | 'saving' | 'unsaved'
+type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'offline'
 
 /** An in-app modal request (replaces the browser's `prompt`/`confirm`), with a
  * `resolve` that hands the answer back to the awaiting caller. */
@@ -289,6 +293,7 @@ function Workspace({
     window.addEventListener('mouseup', onUp)
   }, [])
   const importRef = useRef<HTMLInputElement>(null)
+  const restoreRef = useRef<HTMLInputElement>(null)
   // Draggable split between sidebar and content (two-pane layouts only).
   const [sidebarW, setSidebarW] = useState(() => {
     const v = Number(localStorage.getItem('notes.web.sidebarW'))
@@ -323,7 +328,20 @@ function Workspace({
   // The open in-app dialog (styled prompt/confirm), or null when none.
   const [dialog, setDialog] = useState<DialogState | null>(null)
 
+  // True while the browser reports a live connection; flips drive retry + UI.
+  const [online, setOnline] = useState(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine,
+  )
+
   const cursorRef = useRef(0)
+  // Per-account IndexedDB key for the offline vault cache.
+  const vkey = useMemo(() => vaultKey(serverUrl, auth.user.email), [serverUrl, auth.user.email])
+  // Mirror of `notes` for synchronous reads inside callbacks / persistence.
+  const notesRef = useRef<ApiNote[]>([])
+  // Local writes not yet acknowledged by the server (the offline queue).
+  const outboxRef = useRef<PushItem[]>([])
+  // Guards against pushing edits before the cached vault has hydrated.
+  const hydratedRef = useRef(false)
   const saveTimer = useRef<number | null>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   // Last textarea selection, tracked so the "Mark as joke" button still works
@@ -378,6 +396,17 @@ function Workspace({
     [onLogout, setError],
   )
 
+  /** Write the current vault (notes + cursor + outbox) to on-device storage so
+   * it survives a reload and is available offline. Best-effort. */
+  const persist = useCallback(() => {
+    if (!hydratedRef.current) return
+    void saveVault(vkey, {
+      cursor: cursorRef.current,
+      notes: notesRef.current,
+      outbox: outboxRef.current,
+    })
+  }, [vkey])
+
   /** Apply server push/pull results into local state (upsert / delete). */
   const applyResults = useCallback(
     (results: PushResult[]) => {
@@ -399,8 +428,78 @@ function Workspace({
     [selectedId, setError],
   )
 
-  /** Pull changes since the last cursor and merge them in. */
+  /** Send the outbox to the server. Network failures leave it queued so the
+   * edits survive offline and replay on reconnect. */
+  const flush = useCallback(async () => {
+    const batch = outboxRef.current
+    if (batch.length === 0) {
+      setStatus('saved')
+      return
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setStatus('offline')
+      return
+    }
+    setStatus('saving')
+    try {
+      const { results } = await push(serverUrl, token, batch)
+      // Drop exactly the items we sent; any re-queued during the await are new
+      // object refs and survive.
+      const sent = new Set(batch)
+      outboxRef.current = outboxRef.current.filter((i) => !sent.has(i))
+      applyResults(results)
+      setStatus(outboxRef.current.length ? 'unsaved' : 'saved')
+    } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        handleError(e)
+        return
+      }
+      // Treat any other failure as "offline": keep the queue and retry later.
+      setStatus('offline')
+    }
+    persist()
+  }, [serverUrl, token, applyResults, handleError, persist])
+
+  /** Coalesce local writes into the outbox (latest content per id, keeping the
+   * earliest observed server baseVersion), apply them optimistically to local
+   * state, then try to flush. Works with or without a connection. */
+  const commit = useCallback(
+    async (items: PushItem[]) => {
+      if (items.length === 0) return
+      setNotes((prev) => {
+        const map = new Map(prev.map((n) => [n.id, n]))
+        for (const it of items) {
+          if (it.deleted) {
+            map.delete(it.id)
+            continue
+          }
+          const existing = map.get(it.id)
+          map.set(it.id, {
+            id: it.id,
+            path: it.path,
+            content: it.content,
+            version: existing?.version ?? 0,
+            updatedAt: it.updatedAt,
+            deleted: false,
+            rev: existing?.rev ?? 0,
+          })
+        }
+        return [...map.values()]
+      })
+      const queue = new Map(outboxRef.current.map((i) => [i.id, i]))
+      for (const it of items) {
+        const prev = queue.get(it.id)
+        queue.set(it.id, prev ? { ...it, baseVersion: prev.baseVersion } : it)
+      }
+      outboxRef.current = [...queue.values()]
+      await flush()
+    },
+    [flush],
+  )
+
+  /** Pull changes since the last cursor and merge them in. Offline = no-op. */
   const refresh = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return
     setSyncing(true)
     try {
       const { changes, cursor } = await pull(serverUrl, token, cursorRef.current)
@@ -420,24 +519,67 @@ function Workspace({
     }
   }, [serverUrl, token, handleError])
 
-  // Initial snapshot on sign-in.
+  // Keep the synchronous mirror + on-device cache in step with `notes`.
   useEffect(() => {
-    cursorRef.current = 0
-    void refresh()
-  }, [refresh])
+    notesRef.current = notes
+    persist()
+  }, [notes, persist])
 
-  /** Flush any pending edit to the server immediately. */
+  // On sign-in: hydrate the cached vault first (instant + offline-ready), then
+  // replay any queued edits and pull anything new from the server.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const cached = await loadVault(vkey)
+      if (cancelled) return
+      if (cached) {
+        cursorRef.current = cached.cursor
+        outboxRef.current = cached.outbox ?? []
+        notesRef.current = cached.notes
+        setNotes(cached.notes)
+        if (outboxRef.current.length) setStatus('unsaved')
+      } else {
+        cursorRef.current = 0
+      }
+      hydratedRef.current = true
+      await flush()
+      await refresh()
+    })()
+    return () => {
+      cancelled = true
+    }
+    // Intentionally keyed only on the account: hydrate + initial sync run once
+    // per sign-in, not whenever the flush/refresh callbacks are recreated.
+  }, [vkey])
+
+  // Watch connectivity: when the device comes back online, replay + pull.
+  useEffect(() => {
+    const goOnline = () => {
+      setOnline(true)
+      void flush().then(() => refresh())
+    }
+    const goOffline = () => {
+      setOnline(false)
+      if (outboxRef.current.length) setStatus('offline')
+    }
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [flush, refresh])
+
+  /** Flush any pending debounced edit (and the outbox) to the server now. */
   const saveNow = useCallback(async () => {
     if (saveTimer.current !== null) {
       clearTimeout(saveTimer.current)
       saveTimer.current = null
     }
     const p = pending.current
-    if (!p) return
-    pending.current = null
-    setStatus('saving')
-    try {
-      const { results } = await push(serverUrl, token, [
+    if (p) {
+      pending.current = null
+      await commit([
         {
           id: p.id,
           path: p.path,
@@ -447,13 +589,10 @@ function Workspace({
           baseVersion: p.baseVersion,
         },
       ])
-      applyResults(results)
-      setStatus('saved')
-    } catch (e) {
-      setStatus('unsaved')
-      handleError(e)
+    } else {
+      await flush()
     }
-  }, [serverUrl, token, applyResults, handleError])
+  }, [commit, flush])
 
   function onEdit(text: string) {
     setDraft(text)
@@ -524,6 +663,82 @@ function Workspace({
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     setError(`Exported ${entries.length} note${entries.length === 1 ? '' : 's'}.`)
+  }
+
+  /** Save a full vault snapshot to the device as a single `.json` backup file —
+   * a self-contained copy (ids, paths, content) that {@link restoreFromDevice}
+   * can read back. On a phone this lands in Downloads / local storage. */
+  function backupToDevice() {
+    setShowData(false)
+    if (realNotes.length === 0) {
+      setError('No notes to back up yet.')
+      return
+    }
+    const backup: BackupFile = {
+      kind: 'jokebook-backup',
+      version: 1,
+      account: auth.user.email,
+      savedAt: Date.now(),
+      cursor: cursorRef.current,
+      notes,
+      outbox: outboxRef.current,
+    }
+    const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'joke-book-backup.json'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setError(`Backed up ${realNotes.length} note${realNotes.length === 1 ? '' : 's'} to your device.`)
+  }
+
+  /** Restore notes from a `.json` backup picked off the device. Notes are merged
+   * into the vault (matched by id) and queued for the server like any edit, so a
+   * restore works offline too. Existing notes with the same id are overwritten. */
+  async function restoreFromDevice(file: File) {
+    setShowData(false)
+    let backup: BackupFile
+    try {
+      backup = JSON.parse(await file.text()) as BackupFile
+    } catch {
+      setError('That file is not a valid Joke book backup.')
+      return
+    }
+    if (backup.kind !== 'jokebook-backup' || !Array.isArray(backup.notes)) {
+      setError('That file is not a valid Joke book backup.')
+      return
+    }
+    const restorable = backup.notes.filter((n) => !n.deleted)
+    if (restorable.length === 0) {
+      setError('The backup has no notes to restore.')
+      return
+    }
+    if (
+      !(await uiConfirm({
+        title: 'Restore backup',
+        message: `Restore ${restorable.length} note${
+          restorable.length === 1 ? '' : 's'
+        } from this backup? Notes with the same name/id will be overwritten.`,
+        confirmText: 'Restore',
+      }))
+    )
+      return
+    await saveNow()
+    const byId = new Map(notes.map((n) => [n.id, n]))
+    const items: PushItem[] = restorable.map((n) => ({
+      id: n.id,
+      path: n.path,
+      content: n.content,
+      updatedAt: Date.now(),
+      deleted: false,
+      baseVersion: byId.get(n.id)?.version ?? 0,
+    }))
+    await commit(items)
+    const added = items.filter((i) => !i.path.endsWith('/')).length
+    setError(`Restored ${added} note${added === 1 ? '' : 's'} from your backup.`)
   }
 
   /** Wrap the current editor selection as a joke block. Stays in edit mode so
@@ -601,25 +816,20 @@ function Workspace({
       .filter((s): s is string => Boolean(s))
     if (blocks.length === 0) return
     await saveNow()
-    try {
-      const { results } = await push(serverUrl, token, [
-        {
-          id: target.id,
-          path: target.path,
-          content: appendJokes(target.content, blocks),
-          updatedAt: Date.now(),
-          deleted: false,
-          baseVersion: target.version,
-        },
-      ])
-      applyResults(results)
-      setPickedJokes(new Set())
-      setError(
-        `Copied ${blocks.length} joke${blocks.length > 1 ? 's' : ''} to ${noteName(target.path)}.`,
-      )
-    } catch (e) {
-      handleError(e)
-    }
+    await commit([
+      {
+        id: target.id,
+        path: target.path,
+        content: appendJokes(target.content, blocks),
+        updatedAt: Date.now(),
+        deleted: false,
+        baseVersion: target.version,
+      },
+    ])
+    setPickedJokes(new Set())
+    setError(
+      `Copied ${blocks.length} joke${blocks.length > 1 ? 's' : ''} to ${noteName(target.path)}.`,
+    )
   }
 
   /** Import one or more text files as notes, preserving any folder structure
@@ -691,18 +901,13 @@ function Workspace({
       setError(`Nothing imported — ${skipped} note${skipped === 1 ? '' : 's'} already exist.`)
       return
     }
-    try {
-      const { results } = await push(serverUrl, token, items)
-      applyResults(results)
-      const added = items.filter((i) => !i.path.endsWith('/')).length
-      setError(
-        `Imported ${added} note${added === 1 ? '' : 's'}` +
-          (skipped ? ` (skipped ${skipped} already present)` : '') +
-          '.',
-      )
-    } catch (e) {
-      handleError(e)
-    }
+    await commit(items)
+    const added = items.filter((i) => !i.path.endsWith('/')).length
+    setError(
+      `Imported ${added} note${added === 1 ? '' : 's'}` +
+        (skipped ? ` (skipped ${skipped} already present)` : '') +
+        '.',
+    )
   }
 
   async function openNote(id: string) {
@@ -725,21 +930,13 @@ function Workspace({
     setSelectedId(null)
   }
 
-  /** Create a note on the server and open it. */
+  /** Create a note (locally + queued for the server) and open it. */
   async function createWithPath(path: string, content: string) {
     const id = newId()
-    try {
-      const { results } = await push(serverUrl, token, [
-        { id, path, content, updatedAt: Date.now(), deleted: false, baseVersion: 0 },
-      ])
-      applyResults(results)
-      setSelectedId(id)
-      setDraft(content)
-      setStatus('saved')
-      setMode('edit')
-    } catch (e) {
-      handleError(e)
-    }
+    await commit([{ id, path, content, updatedAt: Date.now(), deleted: false, baseVersion: 0 }])
+    setSelectedId(id)
+    setDraft(content)
+    setMode('edit')
   }
 
   async function newNote() {
@@ -760,14 +957,9 @@ function Workspace({
     )?.trim()
     if (!name) return
     const path = `${name.replace(/\/+$/, '')}/`
-    try {
-      const { results } = await push(serverUrl, token, [
-        { id: newId(), path, content: '', updatedAt: Date.now(), deleted: false, baseVersion: 0 },
-      ])
-      applyResults(results)
-    } catch (e) {
-      handleError(e)
-    }
+    await commit([
+      { id: newId(), path, content: '', updatedAt: Date.now(), deleted: false, baseVersion: 0 },
+    ])
   }
 
   /** Create a new (empty) set and open it. A set is just a note whose body is a
@@ -811,21 +1003,16 @@ function Workspace({
     const base = note.path.split('/').pop()!
     const to = toFolder ? `${toFolder}/${base}` : base
     if (to === note.path) return // already there
-    try {
-      const { results } = await push(serverUrl, token, [
-        {
-          id,
-          path: to,
-          content: note.content,
-          updatedAt: Date.now(),
-          deleted: false,
-          baseVersion: note.version,
-        },
-      ])
-      applyResults(results)
-    } catch (e) {
-      handleError(e)
-    }
+    await commit([
+      {
+        id,
+        path: to,
+        content: note.content,
+        updatedAt: Date.now(),
+        deleted: false,
+        baseVersion: note.version,
+      },
+    ])
   }
 
   /** Rename a note (keeps its folder); `.md` is appended if omitted. */
@@ -855,21 +1042,16 @@ function Workspace({
       return
     }
     await saveNow()
-    try {
-      const { results } = await push(serverUrl, token, [
-        {
-          id,
-          path: to,
-          content: note.content,
-          updatedAt: Date.now(),
-          deleted: false,
-          baseVersion: note.version,
-        },
-      ])
-      applyResults(results)
-    } catch (e) {
-      handleError(e)
-    }
+    await commit([
+      {
+        id,
+        path: to,
+        content: note.content,
+        updatedAt: Date.now(),
+        deleted: false,
+        baseVersion: note.version,
+      },
+    ])
   }
 
   /** Repath a folder subtree: re-push the folder marker and every note /
@@ -889,12 +1071,7 @@ function Workspace({
       }))
     if (items.length === 0) return
     await saveNow()
-    try {
-      const { results } = await push(serverUrl, token, items)
-      applyResults(results)
-    } catch (e) {
-      handleError(e)
-    }
+    await commit(items)
   }
 
   /** Rename a folder in place (keeps its parent). */
@@ -957,22 +1134,17 @@ function Workspace({
       saveTimer.current = null
     }
     pending.current = null
-    try {
-      const { results } = await push(serverUrl, token, [
-        {
-          id: current.id,
-          path: current.path,
-          content: '',
-          updatedAt: Date.now(),
-          deleted: true,
-          baseVersion: current.version,
-        },
-      ])
-      applyResults(results)
-      setSelectedId(null)
-    } catch (e) {
-      handleError(e)
-    }
+    await commit([
+      {
+        id: current.id,
+        path: current.path,
+        content: '',
+        updatedAt: Date.now(),
+        deleted: true,
+        baseVersion: current.version,
+      },
+    ])
+    setSelectedId(null)
   }
 
   /** Follow a `[[wiki-link]]`: open the match or create it. */
@@ -1066,19 +1238,54 @@ function Workspace({
 
   // Ordered bit paths of the open set (only meaningful while a set is open).
   const setBits = useMemo(() => (isSet ? (parseSet(draft) ?? []) : []), [isSet, draft])
-  // Resolve each bit to its note + a joke summary for the running order.
+  // Resolve each bit to its note, its effective text (a set-local override wins
+  // over the live note), and a joke summary computed from that effective text —
+  // so the running order + timing reflect exactly what the set will perform.
   const setRows = useMemo(
     () =>
       setBits.map((path) => {
-        const note = noteItems.find((n) => n.path === path)
-        return { path, note: note ?? null, summary: note ? jokeSummary(note.content) : null }
+        const note = noteItems.find((n) => n.path === path) ?? null
+        const override = isSet ? getBitOverride(draft, path) : null
+        const hasContent = override !== null || note !== null
+        const content = override ?? note?.content ?? ''
+        return {
+          path,
+          note,
+          override,
+          content,
+          summary: hasContent ? jokeSummary(content) : null,
+        }
       }),
-    [setBits, noteItems],
+    [setBits, noteItems, isSet, draft],
   )
   const setSeconds = useMemo(
     () => setRows.reduce((sum, r) => sum + (r.summary?.seconds ?? 0), 0),
     [setRows],
   )
+  // The bit (by path) currently being re-written for this set, and its buffer.
+  const [editingBit, setEditingBit] = useState<string | null>(null)
+  const [bitDraft, setBitDraft] = useState('')
+
+  /** Begin editing a bit's set-local text (seeded from the override or the live
+   * note text). */
+  function startBitEdit(path: string, content: string) {
+    setEditingBit(path)
+    setBitDraft(content)
+  }
+
+  /** Save the edited text as a set-local override — the original bit is left
+   * untouched; only the set note changes. */
+  function saveBitEdit() {
+    if (editingBit === null) return
+    onEdit(setBitOverride(draft, editingBit, bitDraft))
+    setEditingBit(null)
+  }
+
+  /** Drop a bit's override so it falls back to the live note text again. */
+  function revertBit(path: string) {
+    onEdit(clearBitOverride(draft, path))
+    if (editingBit === path) setEditingBit(null)
+  }
 
   // Drop any joke selection when the note or mode changes — joke indices only
   // stay valid within a single note's current preview.
@@ -1087,9 +1294,10 @@ function Workspace({
     setSendingJokes(false)
   }, [selectedId, mode])
 
-  // Close the bit picker whenever the open note changes.
+  // Close the bit picker / bit editor whenever the open note changes.
   useEffect(() => {
     setAddingBit(false)
+    setEditingBit(null)
   }, [selectedId])
 
   const sidebar = (
@@ -1098,6 +1306,11 @@ function Workspace({
         <div className="brand">
           <span className="brand-mark">🎤</span>
           <span className="brand-name">Joke book</span>
+          {!online && (
+            <span className="offline-pill" title="Working offline — changes will sync when you reconnect">
+              offline
+            </span>
+          )}
         </div>
         <div className="sb-actions">
           <button
@@ -1158,6 +1371,17 @@ function Workspace({
           const picked = e.currentTarget.files ? [...e.currentTarget.files] : []
           e.currentTarget.value = ''
           void importFiles(picked)
+        }}
+      />
+      <input
+        ref={restoreRef}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0]
+          e.currentTarget.value = ''
+          if (file) void restoreFromDevice(file)
         }}
       />
       <div className="sb-user" title={auth.user.email}>
@@ -1545,9 +1769,55 @@ function Workspace({
             <div className="set-script preview" onClick={onPreviewClick}>
               {setRows.map((row) => (
                 <section key={row.path} className="set-script-bit">
-                  <h2 className="set-script-title">{noteName(row.path)}</h2>
-                  {row.note ? (
-                    <BitBody content={row.note.content} />
+                  <div className="set-script-head">
+                    <h2 className="set-script-title">
+                      {noteName(row.path)}
+                      {row.override !== null && (
+                        <span className="set-override-badge" title="Текст изменён только в этом сэте">
+                          изменён для сэта
+                        </span>
+                      )}
+                    </h2>
+                    {editingBit !== row.path && (row.note || row.override !== null) && (
+                      <span className="set-script-actions">
+                        <button
+                          className="icon"
+                          title="Изменить текст бита в сэте (оригинал не меняется)"
+                          onClick={() => startBitEdit(row.path, row.content)}
+                        >
+                          <IconEdit />
+                        </button>
+                        {row.override !== null && (
+                          <button
+                            className="icon"
+                            title="Вернуть оригинальный текст бита"
+                            onClick={() => revertBit(row.path)}
+                          >
+                            <IconRefresh />
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {editingBit === row.path ? (
+                    <div className="set-bit-editor" onClick={(e) => e.stopPropagation()}>
+                      <textarea
+                        className="editor"
+                        autoFocus
+                        value={bitDraft}
+                        onChange={(e) => setBitDraft(e.currentTarget.value)}
+                      />
+                      <div className="set-bit-editor-actions">
+                        <button className="set-add-bit" onClick={saveBitEdit}>
+                          Сохранить в сэт
+                        </button>
+                        <button className="icon" title="Отмена" onClick={() => setEditingBit(null)}>
+                          <IconClose />
+                        </button>
+                      </div>
+                    </div>
+                  ) : row.note || row.override !== null ? (
+                    <BitBody content={row.content} />
                   ) : (
                     <p className="joke-stats-dim">Бит «{row.path}» не найден.</p>
                   )}
@@ -1649,6 +1919,11 @@ function Workspace({
             importRef.current?.click()
           }}
           onExport={exportAll}
+          onBackup={backupToDevice}
+          onRestore={() => {
+            setShowData(false)
+            restoreRef.current?.click()
+          }}
           onClose={() => setShowData(false)}
         />
       )}
@@ -1708,22 +1983,32 @@ function MoveSheet({
 function DataSheet({
   onImport,
   onExport,
+  onBackup,
+  onRestore,
   onClose,
 }: {
   onImport: () => void
   onExport: () => void
+  onBackup: () => void
+  onRestore: () => void
   onClose: () => void
 }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head">Import / Export</div>
+        <div className="sheet-head">Data &amp; backup</div>
         <ul className="sheet-list">
           <li onClick={onImport}>
             <IconImport /> Import files…
           </li>
           <li onClick={onExport}>
             <IconExport /> Export all notes (.zip)
+          </li>
+          <li onClick={onBackup}>
+            <IconExport /> Back up to device (.json)
+          </li>
+          <li onClick={onRestore}>
+            <IconImport /> Restore from backup…
           </li>
         </ul>
       </div>
