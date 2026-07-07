@@ -5,8 +5,40 @@ on:
     branches: [main]
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: type=sha,prefix=
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+
   deploy:
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -14,10 +46,9 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_TAG
           script: |
             set -e
-
-            git -C /jokebook pull
 
             aws ssm get-parameters-by-path \
               --region eu-west-1 \
@@ -29,4 +60,9 @@ jobs:
               echo "$(basename "$name")=$value"
             done > /jokebook/.env
 
-            docker compose -f /jokebook/docker-compose.yml -p jokebook up --build -d
+            echo "IMAGE=${{ needs.build.outputs.image }}" >> /jokebook/.env
+
+            docker compose -f /jokebook/docker-compose.yml -p jokebook pull
+            docker compose -f /jokebook/docker-compose.yml -p jokebook up -d
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image }}
