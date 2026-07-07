@@ -1,0 +1,32 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            git -C /jokebook pull
+
+            aws ssm get-parameters-by-path \
+              --region eu-west-1 \
+              --path /jokebook/prod/ \
+              --with-decryption \
+              --query 'Parameters[*].[Name,Value]' \
+              --output text | \
+            while IFS=$'\t' read -r name value; do
+              echo "$(basename "$name")=$value"
+            done > /jokebook/.env
+
+            docker compose -f /jokebook/docker-compose.yml -p jokebook up --build -d
