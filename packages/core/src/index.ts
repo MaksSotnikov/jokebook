@@ -24,6 +24,9 @@ export {
   addJokeVersion,
   removeJokeVersion,
   moveJoke,
+  jokeBlocks,
+  removeJoke,
+  replaceJoke,
   wrapJoke,
   appendJokes,
   wordCount,
@@ -49,6 +52,11 @@ export {
   getBitOverride,
   setBitOverride,
   clearBitOverride,
+  renderJokeSet,
+  setJokeBlocks,
+  addJokesToSet,
+  isLegacySet,
+  migrateLegacySet,
 } from './sets.js'
 
 export {

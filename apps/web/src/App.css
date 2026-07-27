@@ -1450,7 +1450,6 @@ svg {
 
 /* The composed full text of every bit, in order. */
 .set-script {
-  border-top: 2px dashed var(--joke-border);
   margin-top: 0.3rem;
 }
 

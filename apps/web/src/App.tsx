@@ -1,25 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import {
-  addBitToSet,
+  addJokesToSet,
   addJokeVersion,
   appendJokes,
   buildLinkGraph,
-  clearBitOverride,
-  getBitOverride,
+  isLegacySet,
   isSetNote,
+  jokeBlocks,
   jokeSummary,
-  moveBitInSet,
+  migrateLegacySet,
   moveJoke,
   noteName,
   parseJokes,
-  parseSet,
   parseTags,
-  performedVersion,
-  removeBitFromSet,
+  removeJoke,
   removeJokeVersion,
-  renderSet,
-  setBitOverride,
+  renderJokeSet,
+  replaceJoke,
   setVersionStars,
   wrapJoke,
   type ApiNote,
@@ -125,6 +123,15 @@ function renderMd(text: string): string {
 function fmtTime(seconds: number): string {
   const total = Math.round(seconds)
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/** Russian noun form of «шутка» agreeing with `n` (1 шутка · 2 шутки · 5 шуток). */
+function ruJokes(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'шутка'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'шутки'
+  return 'шуток'
 }
 
 function loadAuth(): Auth | null {
@@ -344,6 +351,11 @@ function Workspace({
   const hydratedRef = useRef(false)
   const saveTimer = useRef<number | null>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
+  // The scroll container of the note's reading pane (preview mode).
+  const noteBodyRef = useRef<HTMLDivElement>(null)
+  // Scroll fraction stashed across an edit⇄preview toggle so finishing an edit
+  // keeps the reader roughly where they were, instead of jumping to the top.
+  const modeScrollRef = useRef<number | null>(null)
   // Last textarea selection, tracked so the "Mark as joke" button still works
   // when tapping it collapses the selection (common on mobile).
   const selRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 })
@@ -601,6 +613,18 @@ function Workspace({
     pending.current = { id: current.id, path: current.path, text, baseVersion: current.version }
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DEBOUNCE_MS)
+  }
+
+  /** Flip between edit and preview, stashing the outgoing pane's scroll fraction
+   * so the incoming pane lands at the same place (see the layout effect above).
+   * Finishing an edit therefore stays put instead of snapping to the top. */
+  function toggleMode() {
+    const outgoing = mode === 'edit' ? editorRef.current : noteBodyRef.current
+    if (outgoing) {
+      const range = outgoing.scrollHeight - outgoing.clientHeight
+      modeScrollRef.current = range > 0 ? outgoing.scrollTop / range : 0
+    }
+    setMode((m) => (m === 'edit' ? 'preview' : 'edit'))
   }
 
   /** Show a styled text-input dialog; resolves with the entered string, or
@@ -976,23 +1000,31 @@ function Workspace({
       setError('Заметка с таким именем уже существует.')
       return
     }
-    await createWithPath(base, renderSet([]))
+    await createWithPath(base, renderJokeSet([]))
   }
 
-  /** Add the bit at `path` to the open set (operating on the live draft). */
-  function addBit(path: string) {
+  /** Add every joke from note `path` to the open set as snapshots (its prose is
+   * dropped). No-op with a hint when the note carries no jokes. */
+  function addJokesFromNote(path: string) {
     setAddingBit(false)
-    onEdit(addBitToSet(draft, path))
+    const note = noteItems.find((n) => n.path === path)
+    if (!note) return
+    const blocks = jokeBlocks(note.content)
+    if (blocks.length === 0) {
+      setError(`В заметке «${noteName(path)}» нет шуток.`)
+      return
+    }
+    onEdit(addJokesToSet(draft, blocks))
   }
 
-  /** Remove a bit from the open set. */
-  function removeBit(path: string) {
-    onEdit(removeBitFromSet(draft, path))
+  /** Remove the `index`-th joke from the open set. */
+  function removeSetJoke(index: number) {
+    onEdit(removeJoke(draft, index))
   }
 
-  /** Reorder a bit within the open set (`-1` up, `+1` down). */
-  function moveBit(index: number, dir: -1 | 1) {
-    onEdit(moveBitInSet(draft, index, dir))
+  /** Reorder a joke within the open set (`-1` up, `+1` down). */
+  function moveSetJoke(index: number, dir: -1 | 1) {
+    onEdit(moveJoke(draft, index, dir))
   }
 
   /** Move a note into `toFolder` (`''` = vault root) by repathing it on the server. */
@@ -1176,9 +1208,17 @@ function Workspace({
       return
     }
     const target = decodeWikiHref(href)
-    if (target === null) return
-    e.preventDefault()
-    void followLink(target)
+    if (target !== null) {
+      e.preventDefault()
+      void followLink(target)
+      return
+    }
+    // A real external link (http(s):, mailto:, …). Open it in a new tab so it
+    // never navigates away from — and tears down — this single-page app.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#')) {
+      e.preventDefault()
+      window.open(href, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const sorted = useMemo(
@@ -1236,55 +1276,32 @@ function Workspace({
     [setItems],
   )
 
-  // Ordered bit paths of the open set (only meaningful while a set is open).
-  const setBits = useMemo(() => (isSet ? (parseSet(draft) ?? []) : []), [isSet, draft])
-  // Resolve each bit to its note, its effective text (a set-local override wins
-  // over the live note), and a joke summary computed from that effective text —
-  // so the running order + timing reflect exactly what the set will perform.
-  const setRows = useMemo(
+  // The open set's snapshot jokes (only meaningful while a set is open). Each is
+  // an ordinary joke block, so the note-view joke machinery drives them too.
+  const setJokeSegs = useMemo(
     () =>
-      setBits.map((path) => {
-        const note = noteItems.find((n) => n.path === path) ?? null
-        const override = isSet ? getBitOverride(draft, path) : null
-        const hasContent = override !== null || note !== null
-        const content = override ?? note?.content ?? ''
-        return {
-          path,
-          note,
-          override,
-          content,
-          summary: hasContent ? jokeSummary(content) : null,
-        }
-      }),
-    [setBits, noteItems, isSet, draft],
+      isSet ? parseJokes(draft).filter((s): s is JokeSegment => s.type === 'joke') : [],
+    [isSet, draft],
   )
-  const setSeconds = useMemo(
-    () => setRows.reduce((sum, r) => sum + (r.summary?.seconds ?? 0), 0),
-    [setRows],
-  )
-  // The bit (by path) currently being re-written for this set, and its buffer.
-  const [editingBit, setEditingBit] = useState<string | null>(null)
-  const [bitDraft, setBitDraft] = useState('')
+  // Running-order tally (count + total stage time) for the set.
+  const setStats = useMemo(() => (isSet ? jokeSummary(draft) : null), [isSet, draft])
 
-  /** Begin editing a bit's set-local text (seeded from the override or the live
-   * note text). */
-  function startBitEdit(path: string, content: string) {
-    setEditingBit(path)
-    setBitDraft(content)
+  // The set joke (by index) currently being re-written inline, and its buffer.
+  const [editingSetJoke, setEditingSetJoke] = useState<number | null>(null)
+  const [setJokeDraft, setSetJokeDraft] = useState('')
+
+  /** Begin editing a set joke's snapshot text (seeded from its raw block). */
+  function startSetJokeEdit(index: number, source: string) {
+    setEditingSetJoke(index)
+    setSetJokeDraft(source)
   }
 
-  /** Save the edited text as a set-local override — the original bit is left
-   * untouched; only the set note changes. */
-  function saveBitEdit() {
-    if (editingBit === null) return
-    onEdit(setBitOverride(draft, editingBit, bitDraft))
-    setEditingBit(null)
-  }
-
-  /** Drop a bit's override so it falls back to the live note text again. */
-  function revertBit(path: string) {
-    onEdit(clearBitOverride(draft, path))
-    if (editingBit === path) setEditingBit(null)
+  /** Save the inline edit back into the set (the original note is untouched —
+   * a set joke is a snapshot). */
+  function saveSetJokeEdit() {
+    if (editingSetJoke === null) return
+    onEdit(replaceJoke(draft, editingSetJoke, setJokeDraft))
+    setEditingSetJoke(null)
   }
 
   // Drop any joke selection when the note or mode changes — joke indices only
@@ -1294,11 +1311,36 @@ function Workspace({
     setSendingJokes(false)
   }, [selectedId, mode])
 
-  // Close the bit picker / bit editor whenever the open note changes.
+  // Close the joke picker / inline set-joke editor whenever the open note changes.
   useEffect(() => {
     setAddingBit(false)
-    setEditingBit(null)
+    setEditingSetJoke(null)
   }, [selectedId])
+
+  // One-shot migration: an old bit-path set gets rewritten into the snapshot
+  // joke form on open (its bits' jokes pulled inline, prose dropped). After the
+  // rewrite the set carries no bits, so this never fires a second time.
+  useEffect(() => {
+    if (!current || !isSetNote(current.content) || !isLegacySet(current.content)) return
+    const resolve = (path: string) => realNotes.find((n) => n.path === path)?.content ?? null
+    const migrated = migrateLegacySet(current.content, resolve)
+    if (migrated !== current.content) onEdit(migrated)
+  }, [current?.id, current?.content])
+
+  // After an edit⇄preview toggle, restore the reader's place: apply the scroll
+  // fraction captured on the way out to whichever pane is now showing. Runs
+  // before paint, then on the next frame once the new pane has laid out.
+  useLayoutEffect(() => {
+    const frac = modeScrollRef.current
+    if (frac === null) return
+    modeScrollRef.current = null
+    requestAnimationFrame(() => {
+      const el = mode === 'edit' ? editorRef.current : noteBodyRef.current
+      if (!el) return
+      const range = el.scrollHeight - el.clientHeight
+      if (range > 0) el.scrollTop = frac * range
+    })
+  }, [mode])
 
   // ── Hardware / browser Back button ───────────────────────────────────────
   // A PWA with no router exits the app on the Android Back press. Instead, trap
@@ -1314,7 +1356,7 @@ function Workspace({
     dialog !== null ||
     sendingJokes ||
     addingBit ||
-    editingBit !== null ||
+    editingSetJoke !== null ||
     movingId !== null ||
     movingFolder !== null ||
     showData ||
@@ -1340,8 +1382,8 @@ function Workspace({
       setAddingBit(false)
       return true
     }
-    if (editingBit !== null) {
-      setEditingBit(null)
+    if (editingSetJoke !== null) {
+      setEditingSetJoke(null)
       return true
     }
     if (movingId !== null || movingFolder !== null) {
@@ -1629,7 +1671,7 @@ function Workspace({
         <button
           className="icon"
           title={mode === 'edit' ? 'Preview' : 'Edit'}
-          onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
+          onClick={toggleMode}
         >
           {mode === 'edit' ? <IconEye /> : <IconEdit />}
         </button>
@@ -1652,7 +1694,7 @@ function Workspace({
           ))}
         </div>
       )}
-      <div className="note-body">
+      <div className="note-body" ref={noteBodyRef}>
         {mode === 'edit' ? (
           <div className="editor-wrap">
             <div className="editor-toolbar">
@@ -1797,135 +1839,71 @@ function Workspace({
       <div className="note-body set-body">
         <div className="set-toolbar">
           <button className="set-add-bit" onClick={() => setAddingBit(true)}>
-            <IconPlus /> Добавить бит
+            <IconPlus /> Добавить шутки
           </button>
-          {setRows.length > 0 && (
-            <span className="set-total" title="Суммарный хронометраж лучших версий шуток">
-              {setRows.length} бит{setRows.length === 1 ? '' : 'ов'} · ⏱ {fmtTime(setSeconds)}
+          {setJokeSegs.length > 0 && setStats && (
+            <span className="set-total" title="Кол-во шуток и суммарный хронометраж лучших версий">
+              🎤 {setStats.count} {ruJokes(setStats.count)} · ⏱ {fmtTime(setStats.seconds)}
             </span>
           )}
         </div>
 
-        {setRows.length === 0 ? (
-          <p className="empty">В сэте пока нет битов. Нажмите «Добавить бит».</p>
+        {setJokeSegs.length === 0 ? (
+          <p className="empty">
+            В сэте пока нет шуток. Нажмите «Добавить шутки», чтобы перенести шутки из заметки.
+          </p>
         ) : (
-          <>
-            <ul className="set-list">
-              {setRows.map((row, i) => (
-                <li key={row.path} className={`set-row${row.note ? '' : ' missing'}`}>
-                  <div
-                    className="set-row-main"
-                    onClick={() => row.note && void openNote(row.note.id)}
-                  >
-                    <span className="set-row-name">{noteName(row.path)}</span>
-                    <span className="set-row-meta">
-                      {row.summary ? (
-                        <>
-                          <span className="set-row-time">⏱ {fmtTime(row.summary.seconds)}</span>
-                          <span className="set-row-avg">
-                            {row.summary.avg !== null ? (
-                              <>
-                                <span className="star on">★</span> {row.summary.avg.toFixed(1)}
-                              </>
-                            ) : (
-                              <span className="joke-stats-dim">без оценок</span>
-                            )}
-                          </span>
-                          <span className="joke-stats-dim">🎤 {row.summary.count}</span>
-                        </>
-                      ) : (
-                        <span className="joke-stats-dim">бит не найден</span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="set-row-actions">
-                    <button
-                      className="joke-arrow"
-                      title="Выше"
-                      disabled={i === 0}
-                      onClick={() => moveBit(i, -1)}
-                    >
-                      <IconArrowUp />
+          <div className="set-script preview" onClick={onPreviewClick}>
+            {setJokeSegs.map((seg, i) =>
+              editingSetJoke === seg.index ? (
+                <div
+                  key={seg.index}
+                  className="set-bit-editor"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <textarea
+                    className="editor"
+                    autoFocus
+                    value={setJokeDraft}
+                    onChange={(e) => setSetJokeDraft(e.currentTarget.value)}
+                  />
+                  <div className="set-bit-editor-actions">
+                    <button className="set-add-bit" onClick={saveSetJokeEdit}>
+                      Сохранить
                     </button>
                     <button
-                      className="joke-arrow"
-                      title="Ниже"
-                      disabled={i === setRows.length - 1}
-                      onClick={() => moveBit(i, 1)}
-                    >
-                      <IconArrowDown />
-                    </button>
-                    <button
-                      className="set-row-del"
-                      title="Убрать из сэта"
-                      onClick={() => removeBit(row.path)}
+                      className="icon"
+                      title="Отмена"
+                      onClick={() => setEditingSetJoke(null)}
                     >
                       <IconClose />
                     </button>
                   </div>
-                </li>
-              ))}
-            </ul>
-
-            <div className="set-script preview" onClick={onPreviewClick}>
-              {setRows.map((row) => (
-                <section key={row.path} className="set-script-bit">
-                  <div className="set-script-head">
-                    <h2 className="set-script-title">
-                      {noteName(row.path)}
-                      {row.override !== null && (
-                        <span className="set-override-badge" title="Текст изменён только в этом сэте">
-                          изменён для сэта
-                        </span>
-                      )}
-                    </h2>
-                    {editingBit !== row.path && (row.note || row.override !== null) && (
-                      <span className="set-script-actions">
-                        <button
-                          className="icon"
-                          title="Изменить текст бита в сэте (оригинал не меняется)"
-                          onClick={() => startBitEdit(row.path, row.content)}
-                        >
-                          <IconEdit />
-                        </button>
-                        {row.override !== null && (
-                          <button
-                            className="icon"
-                            title="Вернуть оригинальный текст бита"
-                            onClick={() => revertBit(row.path)}
-                          >
-                            <IconRefresh />
-                          </button>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  {editingBit === row.path ? (
-                    <div className="set-bit-editor" onClick={(e) => e.stopPropagation()}>
-                      <textarea
-                        className="editor"
-                        autoFocus
-                        value={bitDraft}
-                        onChange={(e) => setBitDraft(e.currentTarget.value)}
-                      />
-                      <div className="set-bit-editor-actions">
-                        <button className="set-add-bit" onClick={saveBitEdit}>
-                          Сохранить в сэт
-                        </button>
-                        <button className="icon" title="Отмена" onClick={() => setEditingBit(null)}>
-                          <IconClose />
-                        </button>
-                      </div>
-                    </div>
-                  ) : row.note || row.override !== null ? (
-                    <BitBody content={row.content} />
-                  ) : (
-                    <p className="joke-stats-dim">Бит «{row.path}» не найден.</p>
-                  )}
-                </section>
-              ))}
-            </div>
-          </>
+                </div>
+              ) : (
+                <JokeBlock
+                  key={seg.index}
+                  versions={seg.versions}
+                  render={renderMd}
+                  onRate={(vi, n) => rateVersion(seg.index, vi, n)}
+                  onRemoveVersion={(vi) => removeVersion(seg.index, vi)}
+                  // While one joke is being edited inline, freeze the controls
+                  // that renumber jokes (reorder / remove / open another editor):
+                  // editingSetJoke tracks a position, so shifting indices under
+                  // it would save the buffer onto the wrong joke.
+                  canMoveUp={editingSetJoke === null && i > 0}
+                  canMoveDown={editingSetJoke === null && i < setJokeSegs.length - 1}
+                  onMove={(dir) => moveSetJoke(seg.index, dir)}
+                  onRemove={editingSetJoke === null ? () => removeSetJoke(seg.index) : undefined}
+                  onEditText={
+                    editingSetJoke === null
+                      ? () => startSetJokeEdit(seg.index, seg.source)
+                      : undefined
+                  }
+                />
+              ),
+            )}
+          </div>
         )}
       </div>
     </section>
@@ -1981,8 +1959,8 @@ function Workspace({
 
       {addingBit && current && isSet && (
         <AddBitSheet
-          bits={noteItems.filter((n) => !setBits.includes(n.path))}
-          onPick={addBit}
+          bits={noteItems.filter((n) => jokeBlocks(n.content).length > 0)}
+          onPick={addJokesFromNote}
           onClose={() => setAddingBit(false)}
         />
       )}
@@ -2259,19 +2237,19 @@ function AddBitSheet({
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head">Добавить бит</div>
+        <div className="sheet-head">Добавить шутки из заметки</div>
         <div className="sheet-search">
           <IconSearch />
           <input
             autoFocus
-            placeholder="Поиск бита…"
+            placeholder="Поиск заметки…"
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
           />
         </div>
         {matches.length === 0 ? (
           <p className="empty">
-            {bits.length === 0 ? 'Все биты уже в сэте.' : 'Ничего не найдено.'}
+            {bits.length === 0 ? 'Пока нет заметок с шутками.' : 'Ничего не найдено.'}
           </p>
         ) : (
           <ul className="sheet-list">
@@ -2284,27 +2262,6 @@ function AddBitSheet({
         )}
       </div>
     </div>
-  )
-}
-
-/** Render a bit's full content into the set's running order: text as markdown,
- * each joke as its performed (best-rated) version. */
-function BitBody({ content }: { content: string }) {
-  const segs = useMemo(() => parseJokes(content), [content])
-  return (
-    <>
-      {segs.map((seg, i) =>
-        seg.type === 'text' ? (
-          <div key={i} dangerouslySetInnerHTML={{ __html: renderMd(seg.value) }} />
-        ) : (
-          <div
-            key={i}
-            className="set-script-joke"
-            dangerouslySetInnerHTML={{ __html: renderMd(performedVersion(seg.versions).body) }}
-          />
-        ),
-      )}
-    </>
   )
 }
 
@@ -2335,7 +2292,8 @@ function StarRating({ stars, onRate }: { stars: number; onRate: (stars: number) 
 
 /** A highlighted joke holding one or more alternative versions. Up/down arrows
  * reorder it among the note's jokes; each version carries its own star rating,
- * and an alternative can be added (➕) or removed (✕). */
+ * and an alternative can be added (➕) or removed (✕). In a set the pick and
+ * add-version controls give way to inline edit (✎) and remove-from-set (✕). */
 function JokeBlock({
   versions,
   render,
@@ -2347,32 +2305,42 @@ function JokeBlock({
   canMoveUp,
   canMoveDown,
   onMove,
+  onRemove,
+  onEditText,
 }: {
   versions: JokeVersion[]
   render: (body: string) => string
-  picked: boolean
-  onTogglePick: () => void
+  picked?: boolean
+  onTogglePick?: () => void
   onRate: (versionIndex: number, stars: number) => void
-  onAddVersion: () => void
+  onAddVersion?: () => void
   onRemoveVersion: (versionIndex: number) => void
   canMoveUp: boolean
   canMoveDown: boolean
   onMove: (dir: -1 | 1) => void
+  onRemove?: () => void
+  onEditText?: () => void
 }) {
   const multi = versions.length > 1
   const rated = versions.some((v) => v.stars > 0)
   return (
     <div className={`joke${rated ? ' rated' : ''}${picked ? ' picked' : ''}`}>
       <div className="joke-rail">
-        <label className="joke-pick" title="Select to copy to another note">
-          <input
-            type="checkbox"
-            checked={picked}
-            onClick={(e) => e.stopPropagation()}
-            onChange={onTogglePick}
-          />
+        {onTogglePick ? (
+          <label className="joke-pick" title="Select to copy to another note">
+            <input
+              type="checkbox"
+              checked={picked}
+              onClick={(e) => e.stopPropagation()}
+              onChange={onTogglePick}
+            />
+            <span className="joke-badge">
+              🎤 Joke{multi ? ` · ${versions.length} versions` : ''}
+            </span>
+          </label>
+        ) : (
           <span className="joke-badge">🎤 Joke{multi ? ` · ${versions.length} versions` : ''}</span>
-        </label>
+        )}
         <div className="joke-move" role="group" aria-label="Reorder joke">
           <button
             type="button"
@@ -2400,6 +2368,34 @@ function JokeBlock({
           >
             <IconArrowDown />
           </button>
+          {onEditText && (
+            <button
+              type="button"
+              className="joke-arrow"
+              title="Изменить текст шутки в сэте (оригинал не меняется)"
+              aria-label="Edit joke text"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEditText()
+              }}
+            >
+              <IconEdit />
+            </button>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              className="joke-arrow"
+              title="Убрать шутку из сэта"
+              aria-label="Remove joke from set"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemove()
+              }}
+            >
+              <IconClose />
+            </button>
+          )}
         </div>
       </div>
       {versions.map((v, vi) => (
@@ -2429,17 +2425,19 @@ function JokeBlock({
           )}
         </div>
       ))}
-      <button
-        type="button"
-        className="joke-add-version"
-        title="Add an alternative version of this joke"
-        onClick={(e) => {
-          e.stopPropagation()
-          onAddVersion()
-        }}
-      >
-        <IconPlus /> Add alternative version
-      </button>
+      {onAddVersion && (
+        <button
+          type="button"
+          className="joke-add-version"
+          title="Add an alternative version of this joke"
+          onClick={(e) => {
+            e.stopPropagation()
+            onAddVersion()
+          }}
+        >
+          <IconPlus /> Add alternative version
+        </button>
+      )}
     </div>
   )
 }

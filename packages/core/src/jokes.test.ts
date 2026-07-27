@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   addJokeVersion,
   appendJokes,
+  jokeBlocks,
   jokeSetSeconds,
   moveJoke,
   parseJokes,
   performedVersion,
+  removeJoke,
   removeJokeVersion,
+  replaceJoke,
   setVersionStars,
   wordCount,
   wrapJoke,
@@ -55,6 +58,51 @@ describe('parseJokes', () => {
 
   it('ignores an unclosed block', () => {
     expect(jokeSegs(':::joke 3\ndangling')).toHaveLength(0)
+  })
+})
+
+describe('jokeBlocks', () => {
+  it('returns each joke block source in order, ignoring prose', () => {
+    const a = ':::joke 3\none\n:::'
+    const b = ':::joke 5\ntwo\n:::alt 2\ntwo-b\n:::'
+    expect(jokeBlocks(`intro\n${a}\nmiddle\n${b}\nend`)).toEqual([a, b])
+  })
+
+  it('is empty for a note with no jokes', () => {
+    expect(jokeBlocks('just prose\nno jokes here')).toEqual([])
+  })
+})
+
+describe('removeJoke', () => {
+  it('drops the block and one trailing blank, leaving neighbours', () => {
+    const text = ':::joke 1\na\n:::\n\n:::joke 2\nb\n:::\n'
+    expect(removeJoke(text, 0)).toBe(':::joke 2\nb\n:::\n')
+  })
+
+  it('removes the last remaining joke', () => {
+    expect(jokeBlocks(removeJoke(':::joke 1\na\n:::\n', 0))).toEqual([])
+  })
+
+  it('keeps surrounding prose', () => {
+    expect(removeJoke('lead\n:::joke 1\na\n:::\ntail', 0)).toBe('lead\ntail')
+  })
+
+  it('is a no-op for an out-of-range index', () => {
+    const text = ':::joke 1\na\n:::\n'
+    expect(removeJoke(text, 5)).toBe(text)
+  })
+})
+
+describe('replaceJoke', () => {
+  it('swaps a block source in place', () => {
+    const text = 'lead\n:::joke 1\nold\n:::\ntail'
+    const next = replaceJoke(text, 0, ':::joke 4\nnew\n:::')
+    expect(next).toBe('lead\n:::joke 4\nnew\n:::\ntail')
+  })
+
+  it('is a no-op for an out-of-range index', () => {
+    const text = ':::joke 1\na\n:::'
+    expect(replaceJoke(text, 3, ':::joke 5\nx\n:::')).toBe(text)
   })
 })
 

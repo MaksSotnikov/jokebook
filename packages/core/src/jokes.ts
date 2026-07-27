@@ -178,6 +178,35 @@ export function moveJoke(text: string, index: number, dir: -1 | 1): string {
   return swapped.join('\n')
 }
 
+/** The raw `:::joke … :::` block sources in `text`, in document order — used to
+ * snapshot jokes into a set (or copy them between notes). */
+export function jokeBlocks(text: string): string[] {
+  return parseJokes(text)
+    .filter((s): s is JokeSegment => s.type === 'joke')
+    .map((s) => s.source)
+}
+
+/** Remove the `index`-th joke block entirely (its fences and body), plus one
+ * trailing blank separator line if present, so removals don't leave a growing
+ * gap. Out-of-range indices leave the text unchanged. */
+export function removeJoke(text: string, index: number): string {
+  const lines = text.split('\n')
+  const jk = scan(lines)[index]
+  if (!jk) return text
+  let end = jk.close + 1
+  if (end < lines.length && lines[end].trim() === '') end++
+  return [...lines.slice(0, jk.open), ...lines.slice(end)].join('\n')
+}
+
+/** Replace the `index`-th joke block's source with `block` (expected to be a
+ * well-formed `:::joke … :::` block). Out-of-range indices are a no-op. */
+export function replaceJoke(text: string, index: number, block: string): string {
+  const lines = text.split('\n')
+  const jk = scan(lines)[index]
+  if (!jk) return text
+  return [...lines.slice(0, jk.open), ...block.split('\n'), ...lines.slice(jk.close + 1)].join('\n')
+}
+
 /** Wrap `selection` as a new (unrated) joke block, padding newlines so the
  * `:::` fences sit on their own lines within `before`/`after`. */
 export function wrapJoke(before: string, selection: string, after: string): string {

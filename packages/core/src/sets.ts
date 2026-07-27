@@ -1,29 +1,34 @@
-// A "set" (стендап-сэт) is an ordered playlist of bits — regular notes that
-// hold jokes. Like jokes and folders, a set rides the sync protocol as plain
-// note content (no schema/server changes): the note's whole body is a single
-// fenced block listing the member bit paths, one per line:
+// A "set" (стендап-сэт) is a snapshot playlist of jokes. The note is tagged as
+// a set by an empty `:::set` header, and its body is then just a sequence of
+// ordinary `:::joke` blocks — the jokes copied ("snapshotted") into the set:
 //
 //   :::set
-//   bits/airport.md
-//   bits/cats.md
 //   :::
 //
-// The note's filename is the set's name, so renaming / deleting a set reuses
-// the ordinary note rename / delete machinery. The bodies of the referenced
-// bits are composed live for the running order, so a set always reflects the
-// current text of its bits.
+//   :::joke 4
+//   the airport bit
+//   :::
 //
-// A set may also carry per-bit *overrides*: tweaked text the comedian wants for
-// this set only, without touching the original bit note. Each override is a
-// fenced block appended after the playlist:
+//   :::joke 5
+//   the cats bit
+//   :::
 //
-//   :::setbit bits/airport.md
-//   <reworked text for this set>
-//   :::endbit
+// Because the jokes are plain `:::joke` blocks, every joke helper (rate,
+// reorder, remove, summarise, replace) works on set content directly — a set is
+// just a note whose jokes are its running order and whose prose is dropped.
+// The `:::set` header keeps {@link isSetNote} able to tell sets apart from
+// regular notes (which may also contain jokes), and, like jokes and folders,
+// the whole thing rides the sync protocol as plain content (no schema change).
+// The note's filename is the set's name, so rename / delete reuse the ordinary
+// note machinery.
 //
-// When composing the running order the override text wins over the live bit;
-// the original note is never modified. Overrides ride the same plain-content
-// sync, so they propagate everywhere with no protocol change.
+// LEGACY: earlier sets listed member *bit paths* between the `:::set`/`:::`
+// fences (one per line), optionally with per-bit `:::setbit … :::endbit`
+// overrides, and composed their bits' live text at render time. Those readers
+// live on below so a legacy set can be recognised ({@link isLegacySet}) and
+// converted to the snapshot form ({@link migrateLegacySet}) on first open.
+
+import { appendJokes, jokeBlocks } from './jokes.js'
 
 const SET_OPEN = ':::set'
 const SET_CLOSE = ':::'
@@ -142,4 +147,54 @@ export function clearBitOverride(content: string, path: string): string {
   const overrides = getBitOverrides(content)
   if (!overrides.delete(path)) return content
   return compose(bits, overrides)
+}
+
+// ── Snapshot joke sets (current model) ──────────────────────────────────────
+
+const SET_HEADER = `${SET_OPEN}\n${SET_CLOSE}`
+
+/** Render an ordered list of snapshot joke blocks into set note content: the
+ * `:::set` header (so {@link isSetNote} recognises it) followed by the jokes as
+ * plain `:::joke` blocks. An empty set is just the header. */
+export function renderJokeSet(blocks: string[]): string {
+  if (blocks.length === 0) return `${SET_HEADER}\n`
+  return `${SET_HEADER}\n\n${blocks.join('\n\n')}\n`
+}
+
+/** The snapshot joke blocks that make up a set, in running order. (The `:::set`
+ * header never parses as a joke, so this is exactly the set's jokes.) */
+export function setJokeBlocks(content: string): string[] {
+  return jokeBlocks(content)
+}
+
+/** Append snapshot joke `blocks` to a set, after any it already holds — the
+ * `:::set` header is preserved. No-op for an empty `blocks`. */
+export function addJokesToSet(content: string, blocks: string[]): string {
+  return appendJokes(content, blocks)
+}
+
+/** True for a legacy (bit-path playlist) set that predates snapshot jokes: its
+ * `:::set` block still lists note paths. New snapshot sets carry an empty
+ * `:::set\n:::` header, so their bit list is empty and this is `false`. */
+export function isLegacySet(content: string): boolean {
+  const bits = parseSet(content)
+  return bits !== null && bits.length > 0
+}
+
+/** Convert a legacy bit-path set into the snapshot form: pull the jokes out of
+ * each referenced bit (a set-local override wins over the live note) and store
+ * them inline, in playlist order. Prose around the jokes is dropped. `resolve`
+ * returns the live content of a bit path, or `null` when it can't be found. */
+export function migrateLegacySet(
+  content: string,
+  resolve: (path: string) => string | null,
+): string {
+  const bits = parseSet(content) ?? []
+  const overrides = getBitOverrides(content)
+  const blocks: string[] = []
+  for (const path of bits) {
+    const text = overrides.get(path) ?? resolve(path) ?? ''
+    blocks.push(...jokeBlocks(text))
+  }
+  return renderJokeSet(blocks)
 }

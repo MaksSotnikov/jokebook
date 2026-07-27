@@ -334,9 +334,17 @@ function App() {
       return
     }
     const target = decodeWikiHref(href)
-    if (target === null) return // ordinary link
-    e.preventDefault()
-    void followLink(target)
+    if (target !== null) {
+      e.preventDefault()
+      void followLink(target)
+      return
+    }
+    // A real external link (http(s):, mailto:, …). Open it in a new window/tab
+    // rather than letting it navigate the app's own view away.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#')) {
+      e.preventDefault()
+      window.open(href, '_blank', 'noopener,noreferrer')
+    }
   }
 
   // Tags first, then wiki-links: the wiki transform emits `#wl:` hrefs that the
