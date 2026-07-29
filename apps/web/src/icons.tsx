@@ -128,11 +128,11 @@ export const IconEdit = () => (
   </Svg>
 )
 
+// Rename glyph: a capital "N" (the note/name initial). Two uprights joined by a
+// diagonal, drawn as one continuous stroke.
 export const IconRename = () => (
   <Svg>
-    <path d="M4 7V5h16v2" />
-    <path d="M12 5v14" />
-    <path d="M9 19h6" />
+    <path d="M6 19V5l12 14V5" />
   </Svg>
 )
 
@@ -214,5 +214,28 @@ export const IconSearch = () => (
   <Svg>
     <circle cx="11" cy="11" r="7" />
     <path d="m21 21-4.3-4.3" />
+  </Svg>
+)
+
+export const IconBold = () => (
+  <Svg>
+    <path d="M7 4h6a4 4 0 0 1 0 8H7z" />
+    <path d="M7 12h7a4 4 0 0 1 0 8H7z" />
+  </Svg>
+)
+
+export const IconItalic = () => (
+  <Svg>
+    <path d="M19 4h-9" />
+    <path d="M14 20H5" />
+    <path d="M15 4 9 20" />
+  </Svg>
+)
+
+// Undo: an arrow curving back to the left (отмена последнего действия).
+export const IconUndo = () => (
+  <Svg>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h11a5 5 0 0 1 0 10h-4" />
   </Svg>
 )

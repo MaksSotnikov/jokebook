@@ -33,6 +33,7 @@ import { buildTree, Tree } from './Tree'
 import {
   IconArrowDown,
   IconArrowUp,
+  IconBold,
   IconChevronDown,
   IconChevronLeft,
   IconClose,
@@ -45,6 +46,7 @@ import {
   IconHome,
   IconImport,
   IconImportExport,
+  IconItalic,
   IconLayers,
   IconLogout,
   IconMove,
@@ -56,6 +58,7 @@ import {
   IconSearch,
   IconTag,
   IconTrash,
+  IconUndo,
 } from './icons'
 import {
   decodeTagHref,
@@ -68,6 +71,11 @@ import {
 
 const AUTH_KEY = 'notes.web.auth'
 const SAVE_DEBOUNCE_MS = 800
+// Editor undo: a burst of typing within this window collapses into one undo
+// step (so Undo reverts a word/phrase, not a single keystroke); the stack is
+// capped so a long session can't grow it without bound.
+const UNDO_COALESCE_MS = 400
+const UNDO_LIMIT = 100
 // Bounds for the draggable sidebar width (two-pane layouts).
 const SIDEBAR_MIN = 220
 const SIDEBAR_MAX = 620
@@ -316,6 +324,12 @@ function Workspace({
   const [draft, setDraft] = useState('')
   const [status, setStatus] = useState<SaveStatus>('saved')
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
+  // Editor undo history for the open note (draft snapshots, most-recent last).
+  // Reset when the open note changes — indices only mean anything within one
+  // note's editing session.
+  const undoRef = useRef<string[]>([])
+  const undoAtRef = useRef(0)
+  const [canUndo, setCanUndo] = useState(false)
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   // When true the sidebar shows the all-tags browser instead of the note tree.
@@ -606,13 +620,84 @@ function Workspace({
     }
   }, [commit, flush])
 
-  function onEdit(text: string) {
+  /** Apply an edit to the draft and queue the debounced save. Does NOT record
+   * an undo step — used by {@link onEdit} (which snapshots first) and by the
+   * Undo button (which restores a past snapshot). */
+  function applyEdit(text: string) {
     setDraft(text)
     if (!current) return
     setStatus('unsaved')
     pending.current = { id: current.id, path: current.path, text, baseVersion: current.version }
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DEBOUNCE_MS)
+  }
+
+  function onEdit(text: string) {
+    if (current && text !== draft) {
+      // Snapshot the pre-edit draft for Undo. Consecutive keystrokes within
+      // UNDO_COALESCE_MS collapse into a single step (only the start of a burst
+      // pushes), so Undo reverts a word/phrase rather than one character.
+      const stack = undoRef.current
+      const now = Date.now()
+      if (now - undoAtRef.current > UNDO_COALESCE_MS && stack[stack.length - 1] !== draft) {
+        stack.push(draft)
+        if (stack.length > UNDO_LIMIT) stack.shift()
+        if (!canUndo) setCanUndo(true)
+      }
+      undoAtRef.current = now
+    }
+    applyEdit(text)
+  }
+
+  /** Wrap the current editor selection in `pre`/`post` markers (e.g. `**` for
+   * bold, `*` for italic). With nothing selected, inserts the markers and drops
+   * the caret between them so the user can type. Falls back to the last tracked
+   * selection when tapping the button collapsed it (common on mobile). */
+  function wrapSelection(pre: string, post: string) {
+    const ta = editorRef.current
+    if (!ta || !current) return
+    let start = ta.selectionStart
+    let end = ta.selectionEnd
+    if (start === end) {
+      // Fall back to the last tracked selection (tapping the button can collapse
+      // it on mobile), clamped in case it predates a shorter note.
+      start = Math.min(selRef.current.start, draft.length)
+      end = Math.min(selRef.current.end, draft.length)
+    }
+    const sel = draft.slice(start, end)
+    const next = `${draft.slice(0, start)}${pre}${sel}${post}${draft.slice(end)}`
+    onEdit(next)
+    requestAnimationFrame(() => {
+      ta.focus()
+      if (sel) ta.setSelectionRange(start + pre.length, start + pre.length + sel.length)
+      else {
+        const caret = start + pre.length
+        ta.setSelectionRange(caret, caret)
+      }
+    })
+  }
+
+  /** Undo the last editor change, restoring the most recent snapshot. */
+  function undoEdit() {
+    const stack = undoRef.current
+    const prev = stack.pop()
+    if (prev === undefined) return
+    setCanUndo(stack.length > 0)
+    undoAtRef.current = 0 // next edit starts a fresh undo burst
+    // Drop the caret where the undone change was (the first char that differs
+    // between the current draft and the restored text) so a mid-note Undo keeps
+    // the user in place instead of scrolling to the bottom.
+    const cur = draft
+    let caret = 0
+    const max = Math.min(cur.length, prev.length)
+    while (caret < max && cur[caret] === prev[caret]) caret++
+    applyEdit(prev)
+    requestAnimationFrame(() => {
+      const ta = editorRef.current
+      if (!ta) return
+      ta.focus()
+      ta.setSelectionRange(caret, caret)
+    })
   }
 
   /** Flip between edit and preview, stashing the outgoing pane's scroll fraction
@@ -989,18 +1074,27 @@ function Workspace({
   /** Create a new (empty) set and open it. A set is just a note whose body is a
    * `:::set` playlist, so it reuses the ordinary create/rename/delete paths. */
   async function newSet() {
-    setShowSets(false)
+    // NB: keep the Сэт dropdown open until the very end. Closing it up front and
+    // then opening the name dialog toggles `canGoBack` false→true→false across
+    // the `await`s below, which used to make the Back-button trap fire a stray
+    // `history.back()` — on desktop that navigated the tab out of the app to a
+    // blank page. Closing last keeps `canGoBack` stable through the whole flow.
     await saveNow()
     const name = (
       await uiPrompt({ title: 'Новый сэт', label: 'Название (без .md)', confirmText: 'Создать' })
     )?.trim()
-    if (!name) return
+    if (!name) {
+      setShowSets(false)
+      return
+    }
     const base = name.toLowerCase().endsWith('.md') ? name : `${name}.md`
     if (realNotes.some((n) => n.path === base)) {
+      setShowSets(false)
       setError('Заметка с таким именем уже существует.')
       return
     }
     await createWithPath(base, renderJokeSet([]))
+    setShowSets(false)
   }
 
   /** Add every joke from note `path` to the open set as snapshots (its prose is
@@ -1286,6 +1380,29 @@ function Workspace({
   // Running-order tally (count + total stage time) for the set.
   const setStats = useMemo(() => (isSet ? jokeSummary(draft) : null), [isSet, draft])
 
+  // Which notes the set's jokes came from, and how many each contributed —
+  // shown as a header so the set reads like the old bit-list did. Jokes are
+  // snapshotted verbatim, so we attribute each by matching its raw block back
+  // to a note that still holds an identical one; edited/deleted-source jokes
+  // fall into `unknown` (still counted in the total).
+  const setSources = useMemo(() => {
+    if (!isSet) return { notes: [] as [string, number][], unknown: 0 }
+    const blockToNote = new Map<string, string>()
+    for (const n of noteItems)
+      for (const b of jokeBlocks(n.content)) if (!blockToNote.has(b)) blockToNote.set(b, n.path)
+    const counts = new Map<string, number>()
+    let unknown = 0
+    for (const seg of setJokeSegs) {
+      const path = blockToNote.get(seg.source)
+      if (path) counts.set(path, (counts.get(path) ?? 0) + 1)
+      else unknown++
+    }
+    const notes = [...counts.entries()].sort((a, b) =>
+      noteName(a[0]).toLowerCase().localeCompare(noteName(b[0]).toLowerCase()),
+    )
+    return { notes, unknown }
+  }, [isSet, noteItems, setJokeSegs])
+
   // The set joke (by index) currently being re-written inline, and its buffer.
   const [editingSetJoke, setEditingSetJoke] = useState<number | null>(null)
   const [setJokeDraft, setSetJokeDraft] = useState('')
@@ -1311,10 +1428,15 @@ function Workspace({
     setSendingJokes(false)
   }, [selectedId, mode])
 
-  // Close the joke picker / inline set-joke editor whenever the open note changes.
+  // Close the joke picker / inline set-joke editor whenever the open note
+  // changes, and drop the undo history + last-selection (both are per-note).
   useEffect(() => {
     setAddingBit(false)
     setEditingSetJoke(null)
+    undoRef.current = []
+    undoAtRef.current = 0
+    setCanUndo(false)
+    selRef.current = { start: 0, end: 0 }
   }, [selectedId])
 
   // One-shot migration: an old bit-path set gets rewritten into the snapshot
@@ -1420,8 +1542,13 @@ function Workspace({
       history.pushState({ jbTrap: true }, '')
       backArmedRef.current = true
     } else if (!canGoBack && backArmedRef.current) {
-      // Last layer was closed via an in-app control — drop the trap so the next
-      // Back exits the app rather than being silently swallowed.
+      // Last layer was closed via an in-app control — drop the trap (step off our
+      // pushed entry) so the next Back exits the app rather than being swallowed.
+      // This assumes exactly one trap is on top, which holds only while flows
+      // don't toggle `canGoBack` false→true→false across `await`s: such an
+      // oscillation issues an extra `history.back()` that can traverse a *real*
+      // prior entry, navigating the tab clean out of the app. `newSet` is written
+      // to keep `canGoBack` stable for exactly this reason — see the note there.
       backArmedRef.current = false
       selfPopRef.current = true
       history.back()
@@ -1706,12 +1833,51 @@ function Workspace({
               >
                 🎤 Mark as joke
               </button>
+              <span className="editor-toolbar-sep" />
+              <button
+                className="fmt-btn"
+                title="Bold (**text**)"
+                aria-label="Bold"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => wrapSelection('**', '**')}
+              >
+                <IconBold />
+              </button>
+              <button
+                className="fmt-btn"
+                title="Italic (*text*)"
+                aria-label="Italic"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => wrapSelection('*', '*')}
+              >
+                <IconItalic />
+              </button>
+              <button
+                className="fmt-btn"
+                title="Undo"
+                aria-label="Undo"
+                disabled={!canUndo}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={undoEdit}
+              >
+                <IconUndo />
+              </button>
             </div>
             <textarea
               ref={editorRef}
               className="editor"
               value={draft}
               onChange={(e) => onEdit(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                // Route Ctrl/Cmd+Z through our own undo so the keyboard and the
+                // Undo button share one history — otherwise the native textarea
+                // undo and our stack diverge and fight. (Shift+Z = redo, which
+                // we don't offer, is left to the browser.)
+                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+                  e.preventDefault()
+                  undoEdit()
+                }
+              }}
               onSelect={(e) =>
                 (selRef.current = {
                   start: e.currentTarget.selectionStart,
@@ -1837,6 +2003,26 @@ function Workspace({
       </header>
 
       <div className="note-body set-body">
+        {setJokeSegs.length > 0 && (setSources.notes.length > 0 || setSources.unknown > 0) && (
+          <div className="set-sources">
+            <span className="set-sources-head">Заметки в сэте:</span>
+            {setSources.notes.map(([path, n]) => (
+              <span key={path} className="set-source-chip" title={path}>
+                <IconNote /> {noteName(path)}
+                <span className="set-source-count">{n}</span>
+              </span>
+            ))}
+            {setSources.unknown > 0 && (
+              <span
+                className="set-source-chip other"
+                title="Шутки, отредактированные в сэте или из удалённой заметки"
+              >
+                прочее
+                <span className="set-source-count">{setSources.unknown}</span>
+              </span>
+            )}
+          </div>
+        )}
         <div className="set-toolbar">
           <button className="set-add-bit" onClick={() => setAddingBit(true)}>
             <IconPlus /> Добавить шутки

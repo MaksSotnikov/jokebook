@@ -718,6 +718,45 @@ svg {
   transform: scale(0.97);
 }
 
+.editor-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.1rem 0.15rem;
+  background: var(--border);
+}
+
+/* Bold / Italic / Undo — square icon buttons in the editor toolbar. */
+.fmt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    transform 0.06s;
+}
+
+.fmt-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.fmt-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.fmt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .editor {
   display: block;
   width: 100%;
@@ -1349,6 +1388,66 @@ svg {
   font-weight: 700;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+}
+
+/* Which notes fed the set — a header row of chips above the running order. */
+.set-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.set-sources-head {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-right: 0.1rem;
+}
+
+.set-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid transparent;
+  font-size: 0.82rem;
+  font-weight: 600;
+  max-width: 100%;
+}
+
+.set-source-chip svg {
+  width: 0.95em;
+  height: 0.95em;
+  flex: none;
+}
+
+.set-source-chip.other {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+
+.set-source-count {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-width: 1.1rem;
+  text-align: center;
+  padding: 0 0.28rem;
+  line-height: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-source-chip.other .set-source-count {
+  background: var(--text-dim);
 }
 
 .set-list {
