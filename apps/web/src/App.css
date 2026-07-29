@@ -1427,6 +1427,58 @@ svg {
   flex: none;
 }
 
+/* The note name — a button so clicking a source opens its note. */
+.set-source-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-source-open:hover {
+  text-decoration: underline;
+}
+
+/* Per-note running order: joke count · stage time. */
+.set-source-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.set-source-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.12s;
+}
+
+.set-source-remove:hover {
+  opacity: 1;
+}
+
+.set-source-remove svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
 .set-source-chip.other {
   background: transparent;
   color: var(--text-dim);

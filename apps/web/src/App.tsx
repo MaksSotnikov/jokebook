@@ -8,6 +8,7 @@ import {
   isLegacySet,
   isSetNote,
   jokeBlocks,
+  jokeSetSeconds,
   jokeSummary,
   migrateLegacySet,
   moveJoke,
@@ -1121,6 +1122,14 @@ function Workspace({
     onEdit(moveJoke(draft, index, dir))
   }
 
+  /** Remove every joke a note contributed from the open set at once. Blocks are
+   * dropped in descending index order so earlier indices stay valid as we go. */
+  function removeSetSource(indices: number[]) {
+    let text = draft
+    for (const i of [...indices].sort((a, b) => b - a)) text = removeJoke(text, i)
+    onEdit(text)
+  }
+
   /** Move a note into `toFolder` (`''` = vault root) by repathing it on the server. */
   async function moveNote(id: string, toFolder: string) {
     await saveNow()
@@ -1386,20 +1395,29 @@ function Workspace({
   // to a note that still holds an identical one; edited/deleted-source jokes
   // fall into `unknown` (still counted in the total).
   const setSources = useMemo(() => {
-    if (!isSet) return { notes: [] as [string, number][], unknown: 0 }
+    type Source = { path: string; count: number; seconds: number; indices: number[] }
+    if (!isSet) return { notes: [] as Source[], unknown: 0 }
     const blockToNote = new Map<string, string>()
     for (const n of noteItems)
       for (const b of jokeBlocks(n.content)) if (!blockToNote.has(b)) blockToNote.set(b, n.path)
-    const counts = new Map<string, number>()
+    const byNote = new Map<string, JokeSegment[]>()
     let unknown = 0
     for (const seg of setJokeSegs) {
       const path = blockToNote.get(seg.source)
-      if (path) counts.set(path, (counts.get(path) ?? 0) + 1)
-      else unknown++
+      if (path) {
+        const arr = byNote.get(path)
+        if (arr) arr.push(seg)
+        else byNote.set(path, [seg])
+      } else unknown++
     }
-    const notes = [...counts.entries()].sort((a, b) =>
-      noteName(a[0]).toLowerCase().localeCompare(noteName(b[0]).toLowerCase()),
-    )
+    const notes: Source[] = [...byNote.entries()]
+      .map(([path, segs]) => ({
+        path,
+        count: segs.length,
+        seconds: jokeSetSeconds(segs),
+        indices: segs.map((s) => s.index),
+      }))
+      .sort((a, b) => noteName(a.path).toLowerCase().localeCompare(noteName(b.path).toLowerCase()))
     return { notes, unknown }
   }, [isSet, noteItems, setJokeSegs])
 
@@ -2006,10 +2024,29 @@ function Workspace({
         {setJokeSegs.length > 0 && (setSources.notes.length > 0 || setSources.unknown > 0) && (
           <div className="set-sources">
             <span className="set-sources-head">Заметки в сэте:</span>
-            {setSources.notes.map(([path, n]) => (
-              <span key={path} className="set-source-chip" title={path}>
-                <IconNote /> {noteName(path)}
-                <span className="set-source-count">{n}</span>
+            {setSources.notes.map((src) => (
+              <span key={src.path} className="set-source-chip" title={src.path}>
+                <button
+                  type="button"
+                  className="set-source-open"
+                  title={`Открыть «${noteName(src.path)}»`}
+                  onClick={() => openByPath(src.path)}
+                >
+                  <IconNote /> {noteName(src.path)}
+                </button>
+                <span className="set-source-meta" title="Шуток · хронометраж">
+                  {src.count} · ⏱ {fmtTime(src.seconds)}
+                </span>
+                {editingSetJoke === null && (
+                  <button
+                    type="button"
+                    className="set-source-remove"
+                    title="Убрать шутки этой заметки из сэта"
+                    onClick={() => removeSetSource(src.indices)}
+                  >
+                    <IconClose />
+                  </button>
+                )}
               </span>
             ))}
             {setSources.unknown > 0 && (
