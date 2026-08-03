@@ -35,19 +35,23 @@ jobs:
           # working locally but its tailnet IP changed). Resolve the server by
           # its stable Tailscale hostname at deploy time, falling back to the
           # last-known IP only if resolution fails.
+          #
+          # NB: on the runner the tailscale CLI talks to a root-owned socket, so
+          # it must be called with sudo — a bare `tailscale` prints "Logged out"
+          # even while routing is up, which silently defeated hostname lookup.
           echo "::group::Tailscale status"
-          tailscale status || true
+          sudo tailscale status || true
           echo "::endgroup::"
 
           TS_NAME=maksserver
-          IP="$(tailscale ip -4 "$TS_NAME" 2>/dev/null | head -n1 || true)"
+          IP="$(sudo tailscale ip -4 "$TS_NAME" 2>/dev/null | head -n1 || true)"
           if [ -z "${IP:-}" ]; then
-            echo "Could not resolve '$TS_NAME' on the tailnet; using last-known IP."
+            echo "Could not resolve '$TS_NAME' via tailscale; using last-known IP."
             IP=100.102.254.61
           fi
           echo "Home-server tailnet IP: $IP"
           echo "::group::Tailscale ping"
-          tailscale ping -c 3 --timeout 5s "$IP" || true
+          sudo tailscale ping -c 3 --timeout 5s "$IP" || true
           echo "::endgroup::"
 
           HOST="maks@$IP"
