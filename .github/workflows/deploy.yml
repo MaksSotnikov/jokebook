@@ -30,15 +30,34 @@ jobs:
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
-          HOST=maks@100.102.254.61
+          # A hardcoded Tailscale IP goes stale if the home-server node ever
+          # re-registers (which is what broke this deploy — the old laptop kept
+          # working locally but its tailnet IP changed). Resolve the server by
+          # its stable Tailscale hostname at deploy time, falling back to the
+          # last-known IP only if resolution fails.
+          echo "::group::Tailscale status"
+          tailscale status || true
+          echo "::endgroup::"
+
+          TS_NAME=maksserver
+          IP="$(tailscale ip -4 "$TS_NAME" 2>/dev/null | head -n1 || true)"
+          if [ -z "${IP:-}" ]; then
+            echo "Could not resolve '$TS_NAME' on the tailnet; using last-known IP."
+            IP=100.102.254.61
+          fi
+          echo "Home-server tailnet IP: $IP"
+          echo "::group::Tailscale ping"
+          tailscale ping -c 3 --timeout 5s "$IP" || true
+          echo "::endgroup::"
+
+          HOST="maks@$IP"
           REMOTE='cd ~/jokebook && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker image prune -f'
 
-          # The Tailscale step reports "connected" as soon as the runner joins the
-          # tailnet, but the home server is an old laptop that can briefly sleep or
-          # drop off — an immediate SSH then dies with "Connection timed out"
-          # (exit 255), which failed a deploy once. Retry a few times with a fast
-          # connect timeout so a transient blip doesn't fail the whole deploy; the
-          # remote command is idempotent, so re-running after a drop is safe.
+          # The home server is an old laptop that can briefly sleep or drop off
+          # the tailnet — a single SSH then dies with "Connection timed out"
+          # (exit 255). Retry a few times with a fast connect timeout so a
+          # transient blip doesn't fail the deploy; the remote command is
+          # idempotent, so re-running after a drop is safe.
           attempt=1
           max=6
           until ssh -o StrictHostKeyChecking=accept-new \
@@ -47,11 +66,11 @@ jobs:
                     -i ~/.ssh/id_ed25519 "$HOST" "$REMOTE"; do
             code=$?
             if [ "$attempt" -ge "$max" ]; then
-              echo "::error::SSH deploy failed after ${attempt} attempts (last exit ${code})."
+              echo "::error::SSH deploy to $HOST failed after ${attempt} attempts (last exit ${code})."
               exit "$code"
             fi
-            echo "Deploy attempt ${attempt} failed (exit ${code}); home server may be waking up — retrying in 20s…"
+            echo "Deploy attempt ${attempt} failed (exit ${code}); retrying in 20s…"
             attempt=$((attempt + 1))
             sleep 20
           done
-          echo "Deploy succeeded on attempt ${attempt}."
+          echo "Deploy succeeded on attempt ${attempt} (host $HOST)."
