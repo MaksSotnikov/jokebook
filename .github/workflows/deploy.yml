@@ -1,0 +1,33 @@
+name: Deploy to home server
+
+# При каждом push в main GitHub Actions заходит по SSH на домашний сервер
+# (через Tailscale) и выполняет git pull + пересборку контейнеров.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # позволяет запустить деплой вручную из вкладки Actions
+
+# Не запускать два деплоя одновременно.
+concurrency:
+  group: deploy-home-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy over SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 \
+            maks@100.102.254.61 \
+            'cd ~/jokebook && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker image prune -f'
