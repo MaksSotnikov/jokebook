@@ -25,9 +25,33 @@ jobs:
 
       - name: Deploy over SSH
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 \
-            maks@100.102.254.61 \
-            'cd ~/jokebook && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker image prune -f'
+
+          HOST=maks@100.102.254.61
+          REMOTE='cd ~/jokebook && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker image prune -f'
+
+          # The Tailscale step reports "connected" as soon as the runner joins the
+          # tailnet, but the home server is an old laptop that can briefly sleep or
+          # drop off — an immediate SSH then dies with "Connection timed out"
+          # (exit 255), which failed a deploy once. Retry a few times with a fast
+          # connect timeout so a transient blip doesn't fail the whole deploy; the
+          # remote command is idempotent, so re-running after a drop is safe.
+          attempt=1
+          max=6
+          until ssh -o StrictHostKeyChecking=accept-new \
+                    -o ConnectTimeout=20 \
+                    -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+                    -i ~/.ssh/id_ed25519 "$HOST" "$REMOTE"; do
+            code=$?
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::SSH deploy failed after ${attempt} attempts (last exit ${code})."
+              exit "$code"
+            fi
+            echo "Deploy attempt ${attempt} failed (exit ${code}); home server may be waking up — retrying in 20s…"
+            attempt=$((attempt + 1))
+            sleep 20
+          done
+          echo "Deploy succeeded on attempt ${attempt}."
