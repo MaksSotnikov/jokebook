@@ -15,6 +15,7 @@ import {
   noteName,
   parseJokes,
   parseTags,
+  performedVersion,
   removeJoke,
   removeJokeVersion,
   renderJokeSet,
@@ -56,6 +57,8 @@ import {
   IconPlus,
   IconRefresh,
   IconRename,
+  IconPause,
+  IconPlay,
   IconSearch,
   IconTag,
   IconTrash,
@@ -320,6 +323,8 @@ function Workspace({
   const [showSets, setShowSets] = useState(false)
   // Open when the "Add bit" picker sheet is showing (set view only).
   const [addingBit, setAddingBit] = useState(false)
+  // Rehearsal (teleprompter) overlay open state — set view only.
+  const [rehearsing, setRehearsing] = useState(false)
   const [notes, setNotes] = useState<ApiNote[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -1389,6 +1394,14 @@ function Workspace({
   // Running-order tally (count + total stage time) for the set.
   const setStats = useMemo(() => (isSet ? jokeSummary(draft) : null), [isSet, draft])
 
+  // The set's running order as ready-to-read HTML for the rehearsal prompter —
+  // only the performed (best-rated) version of each joke, the one a comic would
+  // actually deliver on stage.
+  const rehearseJokes = useMemo(
+    () => setJokeSegs.map((seg) => renderMd(performedVersion(seg.versions).body)),
+    [setJokeSegs],
+  )
+
   // Which notes the set's jokes came from, and how many each contributed —
   // shown as a header so the set reads like the old bit-list did. Jokes are
   // snapshotted verbatim, so we attribute each by matching its raw block back
@@ -1450,6 +1463,7 @@ function Workspace({
   // changes, and drop the undo history + last-selection (both are per-note).
   useEffect(() => {
     setAddingBit(false)
+    setRehearsing(false)
     setEditingSetJoke(null)
     undoRef.current = []
     undoAtRef.current = 0
@@ -1493,6 +1507,7 @@ function Workspace({
 
   // Anything Back should unwind before leaving the app. Recomputed each render.
   const canGoBack =
+    rehearsing ||
     dialog !== null ||
     sendingJokes ||
     addingBit ||
@@ -1508,6 +1523,12 @@ function Workspace({
   // Close the top-most (most-recently-opened) layer; one per Back press. Kept in
   // a ref so the popstate listener (registered once) always sees fresh state.
   goBackRef.current = () => {
+    // The rehearsal prompter is a full-screen layer above everything, so Back
+    // leaves it first.
+    if (rehearsing) {
+      setRehearsing(false)
+      return true
+    }
     if (dialog !== null) {
       if (dialog.kind === 'prompt') dialog.resolve(null)
       else dialog.resolve(false)
@@ -2064,6 +2085,15 @@ function Workspace({
           <button className="set-add-bit" onClick={() => setAddingBit(true)}>
             <IconPlus /> Добавить шутки
           </button>
+          {setJokeSegs.length > 0 && (
+            <button
+              className="set-rehearse"
+              title="Режим суфлёра: прогнать сэт с автопрокруткой"
+              onClick={() => setRehearsing(true)}
+            >
+              <IconPlay /> Репетиция
+            </button>
+          )}
           {setJokeSegs.length > 0 && setStats && (
             <span className="set-total" title="Кол-во шуток и суммарный хронометраж лучших версий">
               🎤 {setStats.count} {ruJokes(setStats.count)} · ⏱ {fmtTime(setStats.seconds)}
@@ -2231,6 +2261,14 @@ function Workspace({
       )}
 
       {dialog && <Dialog state={dialog} onClose={() => setDialog(null)} />}
+
+      {rehearsing && current && isSet && (
+        <Rehearsal
+          jokes={rehearseJokes}
+          title={noteName(current.path)}
+          onExit={() => setRehearsing(false)}
+        />
+      )}
 
       {error && (
         <div className="toast" onClick={() => setError(null)}>
@@ -2661,6 +2699,155 @@ function JokeBlock({
           <IconPlus /> Add alternative version
         </button>
       )}
+    </div>
+  )
+}
+
+// ── Rehearsal (teleprompter) ────────────────────────────────────────────
+
+const REHEARSE_SPEED_KEY = 'notes.web.rehearseSpeed'
+const REHEARSE_SPEED_DEFAULT = 40 // px / second
+
+/** Full-screen teleprompter for rehearsing a set: the running order in large
+ * text auto-scrolls at an adjustable speed while a stopwatch counts up. The
+ * scroll stops once the last joke is reached, but the clock keeps running (you
+ * are still "on stage"); «Начать сначала» resets both and returns to the top.
+ * `jokes` are the performed versions, pre-rendered to HTML. */
+function Rehearsal({
+  jokes,
+  title,
+  onExit,
+}: {
+  jokes: string[]
+  title: string
+  onExit: () => void
+}) {
+  const [playing, setPlaying] = useState(true)
+  const [speed, setSpeed] = useState(() => {
+    const v = Number(localStorage.getItem(REHEARSE_SPEED_KEY))
+    return Number.isFinite(v) && v > 0 ? v : REHEARSE_SPEED_DEFAULT
+  })
+  const [shownSecs, setShownSecs] = useState(0)
+
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const speedRef = useRef(speed) // read live inside the rAF loop
+  const elapsedRef = useRef(0) // stopwatch, float seconds
+  const shownRef = useRef(0) // last integer second pushed to state
+
+  useEffect(() => {
+    speedRef.current = speed
+    localStorage.setItem(REHEARSE_SPEED_KEY, String(speed))
+  }, [speed])
+
+  // Clock + scroll from one rAF loop while playing. Scrolling is written
+  // straight to the DOM node (no React re-render); only the ticking whole
+  // second is pushed to state. When the scroll bottoms out we stop advancing it
+  // but keep the clock running — per the rehearsal brief.
+  useEffect(() => {
+    if (!playing) return
+    let raf = 0
+    let last = performance.now()
+    const tick = (ts: number) => {
+      const dt = (ts - last) / 1000
+      last = ts
+      elapsedRef.current += dt
+      const s = Math.floor(elapsedRef.current)
+      if (s !== shownRef.current) {
+        shownRef.current = s
+        setShownSecs(s)
+      }
+      const el = scrollerRef.current
+      if (el) {
+        // Advance by a fractional pixel each frame (sub-pixel scrollTop keeps it
+        // smooth); reading the live scrollTop also lets a manual nudge coexist.
+        // Once we reach the last joke we stop moving — but the clock above keeps
+        // ticking, since the comic is still "on stage".
+        const max = el.scrollHeight - el.clientHeight
+        if (el.scrollTop < max - 0.5) {
+          el.scrollTop = Math.min(max, el.scrollTop + dt * speedRef.current)
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [playing])
+
+  // Desktop hotkeys: Space toggles play/pause, Esc leaves rehearsal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        e.preventDefault()
+        setPlaying((p) => !p)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onExit()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onExit])
+
+  function restart() {
+    elapsedRef.current = 0
+    shownRef.current = 0
+    setShownSecs(0)
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0
+    setPlaying(true)
+  }
+
+  return (
+    <div className="rehearse">
+      <header className="rehearse-bar">
+        <span className="rehearse-title" title={title}>
+          🎤 {title}
+        </span>
+        <span className="rehearse-clock" title="Секундомер">
+          {fmtTime(shownSecs)}
+        </span>
+        <label className="rehearse-speed" title="Скорость прокрутки">
+          <span className="rehearse-speed-label">Скорость</span>
+          <input
+            type="range"
+            min={10}
+            max={150}
+            step={5}
+            value={speed}
+            aria-label="Скорость прокрутки"
+            onChange={(e) => setSpeed(Number(e.currentTarget.value))}
+          />
+        </label>
+        <button
+          type="button"
+          className="rehearse-btn"
+          onClick={() => setPlaying((p) => !p)}
+          title={playing ? 'Пауза (пробел)' : 'Продолжить (пробел)'}
+        >
+          {playing ? <IconPause /> : <IconPlay />}
+          <span>{playing ? 'Пауза' : 'Играть'}</span>
+        </button>
+        <button type="button" className="rehearse-btn" onClick={restart} title="Начать сначала">
+          <IconRefresh />
+          <span>Сначала</span>
+        </button>
+        <button
+          type="button"
+          className="rehearse-btn exit"
+          onClick={onExit}
+          title="Выйти из репетиции (Esc)"
+        >
+          <IconClose />
+          <span>Выйти</span>
+        </button>
+      </header>
+      <div className="rehearse-scroller" ref={scrollerRef}>
+        <div className="rehearse-script preview">
+          {jokes.map((html, i) => (
+            <div key={i} className="rehearse-joke" dangerouslySetInnerHTML={{ __html: html }} />
+          ))}
+          <div className="rehearse-end">— конец сэта —</div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -2086,3 +2086,177 @@ svg {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ── Rehearsal (teleprompter) ─────────────────────────────────────────
+   Entry button lives in the set toolbar; the mode itself is a full-screen
+   overlay with a control bar and a large, auto-scrolling script. */
+.set-rehearse {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.4rem 0.95rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  transition:
+    background 0.12s,
+    transform 0.06s;
+}
+
+.set-rehearse svg {
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.set-rehearse:hover {
+  background: var(--accent-soft);
+}
+
+.set-rehearse:active {
+  transform: scale(0.97);
+}
+
+.rehearse {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: rise 0.16s ease;
+}
+
+.rehearse-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+
+.rehearse-title {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  max-width: 28vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rehearse-clock {
+  margin-right: auto;
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.rehearse-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.rehearse-speed input[type='range'] {
+  width: 120px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.rehearse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition:
+    background 0.12s,
+    transform 0.06s;
+}
+
+.rehearse-btn svg {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.rehearse-btn:hover {
+  background: var(--bg-hover);
+}
+
+.rehearse-btn:active {
+  transform: scale(0.97);
+}
+
+.rehearse-btn.exit {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.rehearse-btn.exit:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.rehearse-scroller {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Larger than the normal reading surface — this is the whole point of the
+   prompter. Generous top/bottom padding lets the first and last lines settle
+   into a comfortable reading band as the script scrolls. */
+.rehearse-script.preview {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 14vh 1.4rem 60vh;
+  font-size: clamp(1.5rem, 4.5vw, 2.3rem);
+  line-height: 1.5;
+}
+
+.rehearse-joke + .rehearse-joke {
+  margin-top: 2.2rem;
+  padding-top: 2.2rem;
+  border-top: 2px dashed var(--border);
+}
+
+.rehearse-end {
+  margin-top: 3rem;
+  text-align: center;
+  font-size: 1rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+
+/* On phones, drop the text labels so the controls stay on one tidy row. */
+@media (max-width: 560px) {
+  .rehearse-btn span,
+  .rehearse-speed-label {
+    display: none;
+  }
+
+  .rehearse-speed input[type='range'] {
+    width: 84px;
+  }
+
+  .rehearse-title {
+    max-width: 32vw;
+  }
+
+  .rehearse-clock {
+    font-size: 1.2rem;
+  }
+}

@@ -239,3 +239,18 @@ export const IconUndo = () => (
     <path d="M4 9h11a5 5 0 0 1 0 10h-4" />
   </Svg>
 )
+
+// Play / pause for the rehearsal (teleprompter) controls. The triangle is
+// filled so it reads clearly at control size against the dark prompter bar.
+export const IconPlay = () => (
+  <Svg>
+    <path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none" />
+  </Svg>
+)
+
+export const IconPause = () => (
+  <Svg>
+    <path d="M8 4v16" />
+    <path d="M16 4v16" />
+  </Svg>
+)
