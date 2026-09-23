@@ -2708,6 +2708,42 @@ function JokeBlock({
 const REHEARSE_SPEED_KEY = 'notes.web.rehearseSpeed'
 const REHEARSE_SPEED_DEFAULT = 40 // px / second
 
+/** Keep the screen on (Screen Wake Lock API) while the calling component is
+ * mounted. The browser drops the lock whenever the page is hidden — app
+ * switch, power button — so it is re-requested each time the page becomes
+ * visible again. A silent no-op where the API is missing (old browsers, plain
+ * http:// origins) or the request is refused (e.g. battery saver). */
+function useScreenWakeLock() {
+  useEffect(() => {
+    if (!('wakeLock' in navigator)) return
+    let lock: WakeLockSentinel | null = null
+    let pending = false // one request at a time, so no lock is ever orphaned
+    let done = false
+    const acquire = async () => {
+      if (done || pending || document.visibilityState !== 'visible') return
+      if (lock && !lock.released) return
+      pending = true
+      try {
+        const l = await navigator.wakeLock.request('screen')
+        if (done) void l.release().catch(() => {})
+        else lock = l
+      } catch {
+        // Refused — the screen just behaves as usual. Retried on next show.
+      } finally {
+        pending = false
+      }
+    }
+    const onVisibility = () => void acquire()
+    void acquire()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      done = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      void lock?.release().catch(() => {})
+    }
+  }, [])
+}
+
 /** Full-screen teleprompter for rehearsing a set: the running order in large
  * text auto-scrolls at an adjustable speed while a stopwatch counts up. The
  * scroll stops once the last joke is reached, but the clock keeps running (you
@@ -2733,6 +2769,10 @@ function Rehearsal({
   const speedRef = useRef(speed) // read live inside the rAF loop
   const elapsedRef = useRef(0) // stopwatch, float seconds
   const shownRef = useRef(0) // last integer second pushed to state
+
+  // Nobody touches the phone while reading a prompter, so without this the OS
+  // screen timeout dims and locks it mid-set.
+  useScreenWakeLock()
 
   useEffect(() => {
     speedRef.current = speed
