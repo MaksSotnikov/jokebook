@@ -18,6 +18,8 @@ export {
 
 export { buildLinkGraph, noteName, type IndexedNote, type LinkGraph } from './links.js'
 
+export { escapeListBullets } from './markdown.js'
+
 export {
   parseJokes,
   setVersionStars,

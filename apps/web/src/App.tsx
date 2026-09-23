@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { marked } from 'marked'
+import { Marked } from 'marked'
 import {
   addJokesToSet,
   addJokeVersion,
   appendJokes,
   buildLinkGraph,
+  escapeListBullets,
   isLegacySet,
   isSetNote,
   jokeBlocks,
@@ -126,9 +127,15 @@ function newId(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
 }
 
-/** Render note markdown (with wiki-link and tag transforms) to HTML. */
+// GFM `breaks`: a single Enter shows as a new line, just as it was typed (like
+// Obsidian's default reading view). It also keeps `- ` dialogue lines on their
+// own lines once `escapeListBullets` has stopped them being list items.
+const markdown = new Marked({ breaks: true })
+
+/** Render note markdown (with wiki-link and tag transforms) to HTML. A leading
+ * `-`/`*`/`+` stays the character the user typed instead of becoming a bullet. */
 function renderMd(text: string): string {
-  return marked.parse(wikiLinksToMarkdown(tagsToMarkdown(text))) as string
+  return markdown.parse(wikiLinksToMarkdown(tagsToMarkdown(escapeListBullets(text)))) as string
 }
 
 /** Format a duration in seconds as `M:SS` for the set timer. */
